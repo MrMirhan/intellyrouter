@@ -174,6 +174,15 @@ When the executors run on your Claude subscription, the gateway cannot add a too
 - Anthropic reports the advisor tokens apart from the main call. The ledger records each advisor call as an Advisor leg with its own tokens and cost.
 - Advisor calls use your plan limits. The advisor tool is experimental in Claude Code.
 
+## Context windows
+
+Claude Code sends the whole conversation in every request, and the gateway passes it to the model of the step. A model with a smaller context window than the conversation rejects the request. On escalate and guided routes the gateway prevents this:
+
+- Before a step, the gateway estimates the size of the request. It learns the tokens per byte of each session from the usage that providers report. If the model's context window cannot hold the request, the step goes to the next tier that can, and the leg note gives the reason.
+- If the estimate is too low and the provider rejects the prompt as too long, the client does not see that error. The gateway sends the request again to the next tier with a larger or unknown context window.
+- The gateway reads the context window from the model's `context` field on the Providers page. Syncing fills it when the provider reports it. A model without a value counts as large enough.
+- Claude Code compacts the conversation at the window it assumes for the route name: 200K tokens, or 1M with the `[1m]` suffix. With `[1m]`, a route whose last tier has a smaller window than the conversation still fails, because no tier can hold the request.
+
 ## Costs and savings
 
 - **API spend**: the cost of all calls that your providers bill.

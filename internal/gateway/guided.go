@@ -87,7 +87,13 @@ func (s *Server) guided(w http.ResponseWriter, r *http.Request, route store.Rout
 	}
 	s.guidedTurns.Put(key, st)
 
-	tier := route.Tiers[dec.Tier]
+	sizeKey := e.SessionID + "\x00" + e.AgentID
+	tierIndex, fitNote, err := s.fittingTier(r.Context(), route.Tiers, dec.Tier, s.sizes.estimate(sizeKey, len(cr.body)))
+	if err != nil {
+		fail(http.StatusServiceUnavailable, "api_error", "route models unavailable: "+err.Error())
+		return
+	}
+	tier := route.Tiers[tierIndex]
 	executor, err := s.resolve(r.Context(), tier.ModelID)
 	if err != nil {
 		fail(http.StatusServiceUnavailable, "api_error", fmt.Sprintf("tier %s unavailable: %v", tier.Label, err))
@@ -98,6 +104,9 @@ func (s *Server) guided(w http.ResponseWriter, r *http.Request, route store.Rout
 	added := ""
 	if dec.Escalated {
 		note += " (moved up after repeated failures)"
+	}
+	if fitNote != "" {
+		note += "; " + fitNote
 	}
 	switch {
 	case st.Guidance == "":
@@ -120,14 +129,23 @@ func (s *Server) guided(w http.ResponseWriter, r *http.Request, route store.Rout
 			return
 		}
 	}
-	leg := s.call(w, r, executor, exec)
-	leg.Role = ledger.RoleExecutor
-	leg.Note = joinNote(note, leg.Note)
-	if cr.capture {
-		leg.Input = added
+	legs := s.callWithFallback(w, r, route.Tiers, tierIndex, executor, sizeKey, func(t target) clientRequest {
+		// Guidance is never added to a subscription request.
+		if t.config.Type == provider.AnthropicSubscription {
+			return cr
+		}
+		return exec
+	})
+	legs[0].Note = joinNote(note, legs[0].Note)
+	for i := range legs {
+		legs[i].Role = ledger.RoleExecutor
+		if cr.capture && legs[i].Model == executor.model.ModelID {
+			legs[i].Input = added
+		}
 	}
-	e.Legs = append(e.Legs, leg)
-	e.Finish(leg.Status, leg.HTTPStatus, leg.Error)
+	e.Legs = append(e.Legs, legs...)
+	last := legs[len(legs)-1]
+	e.Finish(last.Status, last.HTTPStatus, last.Error)
 }
 
 // maxQuestionsPerRequest limits the hidden continuations of one client request.

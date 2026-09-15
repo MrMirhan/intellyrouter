@@ -25,6 +25,7 @@ type Server struct {
 	compat      *compat
 	guidedTurns *guided.Tracker
 	signatures  *signatureCache
+	sizes       *sizeTracker
 	capture     captureFlag
 }
 
@@ -43,7 +44,7 @@ type captureFlag struct {
 func New(st *store.Store, rec *ledger.Recorder, client *http.Client, log *slog.Logger) *Server {
 	return &Server{
 		store: st, ledger: rec, client: client, log: log,
-		decider: escalate.NewDecider(turnTTL), compat: newCompat(), guidedTurns: guided.NewTracker(turnTTL), signatures: newSignatureCache(turnTTL),
+		decider: escalate.NewDecider(turnTTL), compat: newCompat(), guidedTurns: guided.NewTracker(turnTTL), signatures: newSignatureCache(turnTTL), sizes: newSizeTracker(turnTTL),
 	}
 }
 

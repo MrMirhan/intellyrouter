@@ -53,9 +53,15 @@ func (s *Server) escalate(w http.ResponseWriter, r *http.Request, route store.Ro
 	key := e.SessionID + "\x00" + e.AgentID + "\x00" + turn.Key
 	dec := s.decider.Decide(r.Context(), key, turn, labels, rules, classify)
 
-	t, err := s.resolve(r.Context(), route.Tiers[dec.Tier].ModelID)
+	sizeKey := e.SessionID + "\x00" + e.AgentID
+	tierIndex, fitNote, err := s.fittingTier(r.Context(), route.Tiers, dec.Tier, s.sizes.estimate(sizeKey, len(cr.body)))
 	if err != nil {
-		fail(http.StatusServiceUnavailable, "api_error", fmt.Sprintf("tier %s unavailable: %v", labels[dec.Tier], err))
+		fail(http.StatusServiceUnavailable, "api_error", "route models unavailable: "+err.Error())
+		return
+	}
+	t, err := s.resolve(r.Context(), route.Tiers[tierIndex].ModelID)
+	if err != nil {
+		fail(http.StatusServiceUnavailable, "api_error", fmt.Sprintf("tier %s unavailable: %v", labels[tierIndex], err))
 		return
 	}
 	// Savings compare base-tier tokens with the route's strongest model.
@@ -64,18 +70,21 @@ func (s *Server) escalate(w http.ResponseWriter, r *http.Request, route store.Ro
 		e.Reference = &ref
 	}
 
-	leg := s.call(w, r, t, cr)
-	leg.Role = ledger.RoleExecutor
-	if dec.Tier > 0 {
-		leg.Role = ledger.RoleEscalation
+	legs := s.callWithFallback(w, r, route.Tiers, tierIndex, t, sizeKey, func(target) clientRequest { return cr })
+	note := fmt.Sprintf("tier %s: %s", labels[tierIndex], dec.Reason)
+	if fitNote != "" {
+		note += "; " + fitNote
 	}
-	note := fmt.Sprintf("tier %s: %s", labels[dec.Tier], dec.Reason)
-	if leg.Note != "" {
-		note += "; " + leg.Note
+	legs[0].Note = joinNote(note, legs[0].Note)
+	for i := range legs {
+		legs[i].Role = ledger.RoleExecutor
+		if tierIndex > 0 || i > 0 {
+			legs[i].Role = ledger.RoleEscalation
+		}
 	}
-	leg.Note = note
-	e.Legs = append(e.Legs, leg)
-	e.Finish(leg.Status, leg.HTTPStatus, leg.Error)
+	e.Legs = append(e.Legs, legs...)
+	last := legs[len(legs)-1]
+	e.Finish(last.Status, last.HTTPStatus, last.Error)
 }
 
 // classify asks the route's classifier model about the turn. The gateway
