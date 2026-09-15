@@ -28,6 +28,9 @@ func TestHandler(t *testing.T) {
 		if rec.Code != http.StatusOK || rec.Body.String() != c.body || rec.Header().Get("Cache-Control") != c.cache {
 			t.Errorf("GET %s = %d %q cache=%q", c.path, rec.Code, rec.Body.String(), rec.Header().Get("Cache-Control"))
 		}
+		if rec.Header().Get("Content-Security-Policy") != CSP || rec.Header().Get("X-Content-Type-Options") != "nosniff" {
+			t.Errorf("GET %s is missing security headers: %v", c.path, rec.Header())
+		}
 	}
 
 	rec := httptest.NewRecorder()

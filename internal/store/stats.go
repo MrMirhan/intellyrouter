@@ -74,7 +74,7 @@ func (s *Store) Stats(ctx context.Context, since, bucketMS int64) (Stats, error)
 	t := &st.Totals
 	err := s.db.QueryRowContext(ctx, `
 SELECT COUNT(*),
-  COALESCE(SUM(r.status != 'ok'), 0),
+  COALESCE(SUM(r.status NOT IN ('ok', 'canceled')), 0),
   COALESCE(SUM(r.strategy = 'escalate'), 0),
   COALESCE(SUM(EXISTS (SELECT 1 FROM legs l WHERE l.request_id = r.id AND l.role = 'escalation')), 0),
   COALESCE(SUM(r.cost_usd), 0),

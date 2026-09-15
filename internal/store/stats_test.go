@@ -14,6 +14,8 @@ func TestStats(t *testing.T) {
 			TS: 1000, Route: "direct-flash", Strategy: StrategyDirect, Status: "ok", CostUSD: 0.01, ReferenceCostUSD: 0.05,
 			Legs: []Leg{{Role: "direct", Provider: "deepseek", Model: "flash", Billing: "api", InputTokens: 100, OutputTokens: 10, CostUSD: 0.01, Status: "ok"}},
 		},
+		// A client that disconnects is not an error.
+		{TS: 2000, Route: "direct-flash", Strategy: StrategyDirect, Status: "canceled"},
 		{
 			TS: hour + 1, Route: "auto", Strategy: StrategyEscalate, Status: "ok", CostUSD: 0.002, SubscriptionValueUSD: 0.3,
 			Legs: []Leg{
@@ -44,7 +46,7 @@ func TestStats(t *testing.T) {
 		name      string
 		got, want int64
 	}{
-		{"requests", tot.Requests, 3}, {"errors", tot.Errors, 1},
+		{"requests", tot.Requests, 4}, {"errors", tot.Errors, 1},
 		{"escalate requests", tot.EscalateRequests, 2}, {"escalated requests", tot.EscalatedRequests, 1},
 		{"input tokens", tot.InputTokens, 1360}, {"output tokens", tot.OutputTokens, 141}, {"cache read", tot.CacheReadTokens, 500},
 		{"api tokens", tot.APITokens, 330}, {"subscription tokens", tot.SubscriptionTokens, 1600},
@@ -67,7 +69,7 @@ func TestStats(t *testing.T) {
 		}
 	}
 
-	if len(st.Series) != 2 || st.Series[0].TS != 0 || st.Series[0].Requests != 1 || st.Series[0].APITokens != 110 ||
+	if len(st.Series) != 2 || st.Series[0].TS != 0 || st.Series[0].Requests != 2 || st.Series[0].APITokens != 110 ||
 		st.Series[1].TS != hour || st.Series[1].Requests != 2 || st.Series[1].APITokens != 220 || st.Series[1].SubscriptionTokens != 1600 {
 		t.Errorf("series = %+v", st.Series)
 	}

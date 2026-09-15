@@ -6,7 +6,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,9 +17,11 @@ import (
 	"time"
 
 	"intellyrouter/internal/admin"
+	"intellyrouter/internal/dashboard"
 	"intellyrouter/internal/gateway"
 	"intellyrouter/internal/ledger"
 	"intellyrouter/internal/store"
+	"intellyrouter/web"
 )
 
 func main() {
@@ -66,8 +70,14 @@ func run() error {
 	mux := http.NewServeMux()
 	gateway.New(st, ledger.NewRecorder(st, log), client, log).Register(mux)
 	admin.New(st, client, log).Register(mux)
+	mux.HandleFunc("GET /api/", notFound)
+	mux.HandleFunc("GET /v1/", notFound)
+	mux.Handle("GET /", dashboard.Handler(web.Assets()))
 
-	srv := &http.Server{Addr: *addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	if !isLoopback(*addr) {
+		log.Warn("the gateway has no TLS; keep it on localhost or put it behind a TLS proxy", "addr", *addr)
+	}
+	srv := &http.Server{Addr: *addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()
 	log.Info("listening", "addr", *addr, "data", *dataDir)
@@ -83,4 +93,22 @@ func run() error {
 		return err
 	}
 	return nil
+}
+
+func notFound(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotFound)
+	_, _ = io.WriteString(w, `{"error":"not found"}`)
+}
+
+func isLoopback(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
