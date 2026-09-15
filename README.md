@@ -157,6 +157,24 @@ With `"consult": true` (the default), the executor gets one more tool, `ask_dire
 - A question uses one director call of `max_calls_per_turn`. One request can have at most 3 questions.
 - If the executor calls `ask_director` together with other tools, Claude Code runs the other tools. The answer goes to the executor as guidance in the next request.
 
+### Director through Claude Code
+
+A director on an `anthropic-subscription` provider can still give written guidance and answer `ask_director` questions. Turn on "Ask through Claude Code" in the route's director settings. For each checkpoint and question, the gateway starts the Claude Code CLI on its own machine and waits for the answer:
+
+```sh
+claude -p --model <director model> --tools "" --append-system-prompt "<director instruction>" \
+  --output-format json --setting-sources project --strict-mcp-config --effort <effort> \
+  --session-id <id>   # or --resume <id> for later checkpoints
+```
+
+- Claude Code uses your own Claude login on the gateway machine. The gateway does not read the login. It removes `ANTHROPIC_*` and `CLAUDE_CODE_*` variables from the process, so the call does not go to a gateway or an API key. It sets `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, so Claude Code does not send the prompt again for a session title.
+- Claude Code keeps its own system prompt and adds the director instruction. The director has no tools.
+- The first call of an executor session sends the session's system text, the messages, and the checkpoint. Later calls resume the same Claude Code conversation and send only the new messages, so Claude Code reads the earlier part from its prompt cache. When the session no longer starts with what the director read (for example after a compaction), the gateway starts a new conversation.
+- Director conversations run in `<data>/claude-director`. Claude Code saves them under `~/.claude/projects/`; the gateway deletes a conversation when it starts a new one or after one idle hour.
+- A director model with a context window larger than 200K runs as `<model>[1m]`.
+- At most two of these calls run at the same time. Each call uses your plan limits. The ledger records it as a subscription director leg with the note "via Claude Code".
+- The gateway starts Claude Code with the `-claude` flag of `intellyrouter` (default `claude`). If the call fails, the executor continues with the previous guidance.
+
 ### Claude Code advisor
 
 When the executors run on your Claude subscription, the gateway cannot add a tool to their requests. Claude Code has its own advisor tool for the same purpose: when the model is stuck or before a large change, it asks a second model, and Anthropic runs that advisor on your plan. Choose the advisor in the connect snippet, or set these values yourself (the model ID is an example):

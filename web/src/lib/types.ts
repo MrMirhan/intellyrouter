@@ -81,6 +81,7 @@ export interface GuidedSettings {
     model_id: number
     effort: DirectorEffort
     max_calls_per_turn: number
+    claude_code: boolean
   }
   checkpoints: {
     turn_start: boolean

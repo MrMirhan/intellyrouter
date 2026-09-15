@@ -22,6 +22,8 @@ At each checkpoint, give the executor guidance for its next steps:
 
 At a review checkpoint, start your reply with APPROVED when the work is complete and correct and nothing else is needed. Otherwise list what must change.
 
+The executor reads your guidance only at checkpoints and cannot wait for you. Do not tell it to wait for your approval. When it must check a decision with you, tell it to call the ask_director tool if it has one.
+
 Be direct and concise: at most 250 words. Do not paste large code blocks.`
 
 const (
@@ -56,17 +58,7 @@ func DirectorRequest(body []byte, model string, ds DirectorSettings, reason, det
 		blocks := msgs[n-1].Content
 		blocks[len(blocks)-1].CacheControl = map[string]any{"type": "ephemeral"}
 	}
-	checkpoint := "Checkpoint: " + reason
-	if detail != "" {
-		checkpoint += " (" + detail + ")"
-	}
-	if reason == ReasonQuestion {
-		checkpoint = "The executor asks you:\n" + detail + "\n\nAnswer the question directly, then add the guidance the executor needs."
-	}
-	if previous != "" {
-		checkpoint += "\n\nYour previous guidance in this turn:\n" + previous
-	}
-	msgs = appendText(msgs, "user", checkpoint+"\n\nGive your guidance now.")
+	msgs = appendText(msgs, "user", checkpointText(reason, detail, previous))
 	out := map[string]any{
 		"model":      model,
 		"max_tokens": 8192,

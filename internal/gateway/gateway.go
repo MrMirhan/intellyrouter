@@ -26,6 +26,7 @@ type Server struct {
 	guidedTurns *guided.Tracker
 	signatures  *signatureCache
 	sizes       *sizeTracker
+	claude      *claudeCode
 	capture     captureFlag
 }
 

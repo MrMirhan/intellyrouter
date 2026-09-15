@@ -104,6 +104,7 @@ export function GuidedSettingsFields({
   const subscriptionDirector =
     director !== undefined &&
     providers.find((provider) => provider.id === director.provider_id)?.type === "anthropic-subscription"
+  const viaClaudeCode = subscriptionDirector && settings.director.claude_code
 
   const setDirector = (changes: Partial<GuidedSettings["director"]>) =>
     onChange({ ...settings, director: { ...settings.director, ...changes } })
@@ -152,8 +153,17 @@ export function GuidedSettingsFields({
               </Select>
             </div>
           </div>
+          {subscriptionDirector && (
+            <SwitchRow
+              id="director-claude-code"
+              label="Ask through Claude Code"
+              description="For each checkpoint and question, the gateway runs Claude Code on its own machine with your Claude login and adds the director's written guidance to the executor's request. Later calls in a session continue the same Claude Code conversation, so earlier parts come from its cache. Each call uses your plan limits. When this is off, the director takes the checkpoint step itself."
+              checked={settings.director.claude_code}
+              onChange={(claudeCode) => setDirector({ claude_code: claudeCode })}
+            />
+          )}
           <p className="text-sm text-muted-foreground">
-            {subscriptionDirector
+            {subscriptionDirector && !viaClaudeCode
               ? "The gateway cannot call a subscription model on its own. At a checkpoint, Claude Code's request goes to the director, so the director does that step itself. Executors get no written guidance."
               : "At a checkpoint, the gateway sends the director a text copy of the session and adds its guidance to the executor's request. Claude Code does not see the guidance."}
           </p>
@@ -161,8 +171,8 @@ export function GuidedSettingsFields({
             id="director-consult"
             label="Executor can ask the director"
             description={
-              subscriptionDirector
-                ? "Needs a director on an API key. A subscription director cannot answer questions."
+              subscriptionDirector && !viaClaudeCode
+                ? "Needs a director on an API key, or a subscription director with Ask through Claude Code on."
                 : "The executor gets an ask_director tool. The gateway gets the director's answer and continues the same response. Claude Code does not see the question."
             }
             checked={settings.consult}

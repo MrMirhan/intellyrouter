@@ -25,6 +25,9 @@ type DirectorSettings struct {
 	ModelID         int64  `json:"model_id"`
 	Effort          string `json:"effort"`
 	MaxCallsPerTurn int    `json:"max_calls_per_turn"`
+	// ClaudeCode asks a subscription director through the Claude Code CLI on
+	// the gateway machine instead of letting it take the checkpoint step.
+	ClaudeCode bool `json:"claude_code"`
 }
 
 // Checkpoints select the moments when the director looks at the session.

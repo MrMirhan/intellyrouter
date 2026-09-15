@@ -6,7 +6,7 @@ export const defaultEscalateSettings: EscalateSettings = {
 }
 
 export const defaultGuidedSettings: GuidedSettings = {
-  director: { model_id: 0, effort: "medium", max_calls_per_turn: 6 },
+  director: { model_id: 0, effort: "medium", max_calls_per_turn: 6, claude_code: false },
   checkpoints: {
     turn_start: true,
     failed_results: 2,

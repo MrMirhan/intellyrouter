@@ -41,7 +41,7 @@ func run() error {
 	dataDir := flag.String("data", filepath.Join(home, ".intellyrouter"), "data directory")
 	resetAdmin := flag.Bool("reset-admin-token", false, "issue a new admin token and print it")
 	evalTasks := flag.String("eval-tasks", "eval/tasks", "directory with eval tasks for the dashboard")
-	claude := flag.String("claude", "claude", "Claude Code binary that eval runs start")
+	claude := flag.String("claude", "claude", "Claude Code binary for eval runs and for directors that answer through Claude Code")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -87,7 +87,9 @@ func run() error {
 
 	client := &http.Client{}
 	mux := http.NewServeMux()
-	gateway.New(st, ledger.NewRecorder(st, log), client, log).Register(mux)
+	gw := gateway.New(st, ledger.NewRecorder(st, log), client, log)
+	gw.UseClaudeCode(*claude, filepath.Join(*dataDir, "claude-director"))
+	gw.Register(mux)
 	admin.New(st, client, log, evals).Register(mux)
 	mux.HandleFunc("GET /api/", notFound)
 	mux.HandleFunc("GET /v1/", notFound)

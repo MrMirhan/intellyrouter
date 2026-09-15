@@ -58,7 +58,7 @@ func (s *Server) guided(w http.ResponseWriter, r *http.Request, route store.Rout
 		checkpoint += " (" + dec.Detail + ")"
 	}
 
-	if dec.Reason != "" && director.config.Type == provider.AnthropicSubscription {
+	if dec.Reason != "" && director.config.Type == provider.AnthropicSubscription && !s.viaClaudeCode(settings.Director, director) {
 		// The director takes the review step itself, so the turn counts as reviewed;
 		// otherwise every later passing step would hand the work to it again.
 		if dec.Reason == guided.ReasonReview {
@@ -73,7 +73,7 @@ func (s *Server) guided(w http.ResponseWriter, r *http.Request, route store.Rout
 		return
 	}
 	if dec.Reason != "" {
-		guidance, approved, leg := s.consultDirector(r.Context(), director, cr.body, settings.Director, dec, st.Guidance, cr.capture)
+		guidance, approved, leg := s.consultDirector(r.Context(), director, cr.body, e.SessionID+"\x00"+e.AgentID, settings.Director, dec, st.Guidance, cr.capture)
 		leg.Role = ledger.RoleDirector
 		leg.Note = joinNote("checkpoint: "+checkpoint, leg.Note)
 		if cr.capture {
@@ -122,7 +122,7 @@ func (s *Server) guided(w http.ResponseWriter, r *http.Request, route store.Rout
 	}
 	exec := clientRequest{body: body, stream: cr.stream, claudeAuth: cr.claudeAuth, capture: cr.capture}
 	if settings.Consult && cr.stream && turn.HasTools &&
-		director.config.Type != provider.AnthropicSubscription && executor.config.Type != provider.AnthropicSubscription {
+		(director.config.Type != provider.AnthropicSubscription || s.viaClaudeCode(settings.Director, director)) && executor.config.Type != provider.AnthropicSubscription {
 		if withTool, ok, err := guided.AddConsultTool(body); err == nil && ok {
 			exec.body = withTool
 			s.runWithConsult(w, r, e, exec, consultRun{settings: settings, director: director, executor: executor, key: key, state: st, note: note, guidance: added})
@@ -221,7 +221,7 @@ func (s *Server) answerQuestion(ctx context.Context, e *ledger.Entry, body []byt
 		}
 	}
 	dec := guided.Decision{Reason: guided.ReasonQuestion, Detail: call.question}
-	guidance, _, leg := s.consultDirector(ctx, run.director, transcript, run.settings.Director, dec, run.state.Guidance, capture)
+	guidance, _, leg := s.consultDirector(ctx, run.director, transcript, e.SessionID+"\x00"+e.AgentID, run.settings.Director, dec, run.state.Guidance, capture)
 	leg.Role = ledger.RoleDirector
 	leg.Note = joinNote("question: "+clip(call.question, 300), leg.Note)
 	if capture {
@@ -237,9 +237,12 @@ func (s *Server) answerQuestion(ctx context.Context, e *ledger.Entry, body []byt
 
 // consultDirector asks the director for guidance. A failed call leaves the
 // previous guidance in place, so the executor keeps working.
-func (s *Server) consultDirector(ctx context.Context, director target, body []byte, ds guided.DirectorSettings, dec guided.Decision, previous string, capture bool) (string, bool, ledger.Leg) {
+func (s *Server) consultDirector(ctx context.Context, director target, body []byte, session string, ds guided.DirectorSettings, dec guided.Decision, previous string, capture bool) (string, bool, ledger.Leg) {
 	ctx, cancel := context.WithTimeout(ctx, directorTimeout)
 	defer cancel()
+	if s.viaClaudeCode(ds, director) {
+		return s.consultViaClaudeCode(ctx, director, body, session, ds, dec, previous, capture)
+	}
 	leg := director.newLeg()
 	req, err := guided.DirectorRequest(body, director.model.ModelID, ds, dec.Reason, dec.Detail, previous)
 	if err != nil {
