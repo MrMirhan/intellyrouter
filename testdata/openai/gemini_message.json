@@ -1,0 +1,1 @@
+{"choices":[{"finish_reason":"stop","index":0,"message":{"content":"hello there","role":"assistant"}}],"created":1789469981,"id":"HCWpavSjNMK7vdIPmsSF6Ac","model":"models/gemini-2.5-flash","object":"chat.completion","usage":{"completion_tokens":2,"prompt_tokens":7,"total_tokens":47}}

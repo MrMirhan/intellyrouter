@@ -62,7 +62,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 
 	switch route.Strategy {
 	case store.StrategyDirect:
-		s.direct(w, r, route, body, &e)
+		s.direct(w, r, route, body, meta.Stream, &e)
 	default:
 		writeError(w, http.StatusNotImplemented, "api_error", fmt.Sprintf("strategy %q is not implemented yet", route.Strategy))
 		return
@@ -70,15 +70,32 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	s.ledger.Record(context.WithoutCancel(r.Context()), e)
 }
 
-func (s *Server) direct(w http.ResponseWriter, r *http.Request, route store.Route, body []byte, e *ledger.Entry) {
-	t, upstream, ok := s.prepare(w, r, baseModel(route), body, e)
-	if !ok {
+func (s *Server) direct(w http.ResponseWriter, r *http.Request, route store.Route, body []byte, stream bool, e *ledger.Entry) {
+	t, err := s.resolve(r.Context(), baseModel(route))
+	if err != nil {
+		e.Finish(ledger.StatusError, http.StatusServiceUnavailable, "route model unavailable: "+err.Error())
+		writeError(w, http.StatusServiceUnavailable, "api_error", e.Error)
 		return
 	}
-	leg := s.forward(w, r, t, upstream)
+	leg := s.call(w, r, t, body, stream)
 	leg.Role = ledger.RoleDirect
 	e.Legs = append(e.Legs, leg)
 	e.Finish(leg.Status, leg.HTTPStatus, leg.Error)
+}
+
+// call sends the client request to one model in its provider's format and
+// relays the answer. It writes the client response in every case.
+func (s *Server) call(w http.ResponseWriter, r *http.Request, t target, body []byte, stream bool) ledger.Leg {
+	if t.config.Type.Format() == provider.FormatOpenAI {
+		return s.forwardOpenAI(w, r, t, body, stream)
+	}
+	upstream, err := withModel(body, t.model.ModelID)
+	if err != nil {
+		msg := "invalid request body: " + err.Error()
+		writeError(w, http.StatusBadRequest, "invalid_request_error", msg)
+		return ledger.Leg{Provider: t.provider.Name, Model: t.model.ModelID, Status: ledger.StatusError, HTTPStatus: http.StatusBadRequest, Error: msg}
+	}
+	return s.forward(w, r, t, upstream)
 }
 
 func baseModel(r store.Route) int64 {
@@ -86,29 +103,6 @@ func baseModel(r store.Route) int64 {
 		return 0
 	}
 	return r.Tiers[0].ModelID
-}
-
-// prepare resolves a tier model and rewrites the body's model field.
-// On failure it writes the client error and returns false.
-func (s *Server) prepare(w http.ResponseWriter, r *http.Request, modelID int64, body []byte, e *ledger.Entry) (target, []byte, bool) {
-	t, err := s.resolve(r.Context(), modelID)
-	if err != nil {
-		e.Finish(ledger.StatusError, http.StatusServiceUnavailable, "route model unavailable: "+err.Error())
-		writeError(w, http.StatusServiceUnavailable, "api_error", e.Error)
-		return target{}, nil, false
-	}
-	if t.config.Type.Format() != provider.FormatAnthropic {
-		e.Finish(ledger.StatusError, http.StatusNotImplemented, "OpenAI-format providers are not supported yet")
-		writeError(w, http.StatusNotImplemented, "api_error", e.Error)
-		return target{}, nil, false
-	}
-	upstream, err := withModel(body, t.model.ModelID)
-	if err != nil {
-		e.Finish(ledger.StatusError, http.StatusBadRequest, "invalid request body: "+err.Error())
-		writeError(w, http.StatusBadRequest, "invalid_request_error", e.Error)
-		return target{}, nil, false
-	}
-	return t, upstream, true
 }
 
 func (s *Server) handleCountTokens(w http.ResponseWriter, r *http.Request) {

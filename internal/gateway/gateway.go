@@ -70,14 +70,19 @@ type errorDetail struct {
 	Message string `json:"message"`
 }
 
-// writeError writes an error in the Anthropic API shape Claude Code expects.
-func writeError(w http.ResponseWriter, status int, typ, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(struct {
+// errorJSON builds an error in the Anthropic API shape Claude Code expects.
+func errorJSON(typ, message string) []byte {
+	b, _ := json.Marshal(struct {
 		Type  string      `json:"type"`
 		Error errorDetail `json:"error"`
 	}{"error", errorDetail{typ, message}})
+	return b
+}
+
+func writeError(w http.ResponseWriter, status int, typ, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write(errorJSON(typ, message))
 }
 
 func (s *Server) internalError(w http.ResponseWriter, what string, err error) {
