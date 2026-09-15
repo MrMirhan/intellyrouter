@@ -66,8 +66,12 @@ func (a *API) writeContent(w http.ResponseWriter, r *http.Request, tail int, exp
 		lc := captured[l.Seq]
 		out.Legs = append(out.Legs, contentLegJSON{Seq: l.Seq, Role: l.Role, Model: l.Model, Billing: l.Billing, Input: lc.Input, Output: rawJSON(lc.Output)})
 	}
-	if n := len(out.Legs); n > 0 {
-		out.Response = out.Legs[n-1].Output
+	// The response is the last output; an advisor leg has none of its own.
+	for i := len(out.Legs) - 1; i >= 0; i-- {
+		if o := out.Legs[i].Output; len(o) > 0 && string(o) != "null" {
+			out.Response = o
+			break
+		}
 	}
 	if export {
 		meta := toRequestJSON(req)

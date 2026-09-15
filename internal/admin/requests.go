@@ -72,7 +72,9 @@ func toRequestJSON(r store.Request) requestJSON {
 			CostUSD: l.CostUSD, LatencyMS: l.LatencyMS, Status: l.Status, StopReason: l.StopReason, Note: l.Note,
 		})
 		out.Models = append(out.Models, legModelJSON{Role: l.Role, Model: l.Model, Billing: l.Billing})
-		out.AnswerModel = l.Model
+		if l.Role != ledger.RoleAdvisor {
+			out.AnswerModel = l.Model
+		}
 	}
 	return out
 }

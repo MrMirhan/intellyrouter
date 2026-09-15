@@ -169,8 +169,10 @@ When the executors run on your Claude subscription, the gateway cannot add a too
 ```
 
 - Claude Code does not know route names, so it cannot check the advisor pairing. Use Fable 5.1, because every Claude model accepts it as an advisor.
-- Use the advisor only on routes whose models are all Claude models. Other providers reject the advisor tool.
+- The advisor works only when a Claude model serves the request. The connect snippet offers it only for routes whose models are all Claude models.
 - Advisor calls use your plan limits. The advisor tool is experimental in Claude Code.
+- Anthropic reports the advisor tokens apart from the main call. The ledger records each advisor call as an Advisor leg with its own tokens and cost.
+- For other providers, the gateway removes the advisor tool from the request.
 
 ## Costs and savings
 
