@@ -1,0 +1,9 @@
+{
+  "id": "py-sla-deadline",
+  "language": "python",
+  "difficulty": "medium",
+  "prompt": "Support is getting wrong SLA deadlines from sla.py. Three cases we've seen: a ticket opened Monday 13:00 with a 4-business-hour SLA gets a deadline of Tuesday 09:00 instead of Monday 17:00; the Easter Monday holiday we configure on the calendar is still counted as a working day; and a reply sent at exactly the deadline is reported as breached. We also store ticket times in UTC while the office calendar is in CET, and the deadlines we show sometimes come back in UTC instead of office time. The README describes how the SLA clock is supposed to work. Please fix the module to match it. Unit tests are in tests/ (`python3 -m unittest`).",
+  "test_command": ["python3", "-m", "unittest"],
+  "protected": ["tests/__init__.py", "tests/test_sla.py"],
+  "timeout_seconds": 600
+}

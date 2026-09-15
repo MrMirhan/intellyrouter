@@ -1,0 +1,9 @@
+{
+  "id": "go-cli-flags",
+  "language": "go",
+  "difficulty": "easy",
+  "prompt": "The argument parsing in our tailn CLI (cli.go) doesn't match what the README promises. `tailn -n=3 app.log` and `tailn --lines=3 app.log` are rejected as unknown flags. `tailn app.log -n` (flag with no value) crashes with an index out of range panic, and `tailn -n abc app.log` silently prints nothing instead of complaining. Also `--` doesn't stop flag parsing, so I can't tail a file literally named `-q`. Please fix the parser: support both `-n N` and `-n=N` (same for --lines), treat everything after `--` as a file name, and for a missing, non-numeric or negative line count print an error plus the usage line to stderr and exit with status 2. Keep the other behavior as documented in the README. There are tests for this.",
+  "test_command": ["go", "test", "-race", "./..."],
+  "protected": ["cli_test.go"],
+  "timeout_seconds": 600
+}

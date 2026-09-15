@@ -1,0 +1,98 @@
+diff -ruN a/metrics.go b/metrics.go
+--- a/metrics.go
++++ b/metrics.go
+@@ -9,19 +9,20 @@
+ 	"slices"
+ 	"strings"
+ 	"sync"
++	"sync/atomic"
+ )
+ 
+ // Registry holds counters and gauges by name.
+ type Registry struct {
+ 	mu       sync.RWMutex
+-	counters map[string]*int64
+-	gauges   map[string]*int64
++	counters map[string]*atomic.Int64
++	gauges   map[string]*atomic.Int64
+ }
+ 
+ func NewRegistry() *Registry {
+ 	return &Registry{
+-		counters: make(map[string]*int64),
+-		gauges:   make(map[string]*int64),
++		counters: make(map[string]*atomic.Int64),
++		gauges:   make(map[string]*atomic.Int64),
+ 	}
+ }
+ 
+@@ -32,12 +33,12 @@
+ 
+ // Add adds delta to the counter name, creating it at zero if needed.
+ func (r *Registry) Add(name string, delta int64) {
+-	*r.cell(r.counters, name) += delta
++	r.cell(r.counters, name).Add(delta)
+ }
+ 
+ // AddGauge adds delta (which may be negative) to the gauge name.
+ func (r *Registry) AddGauge(name string, delta int64) {
+-	*r.cell(r.gauges, name) += delta
++	r.cell(r.gauges, name).Add(delta)
+ }
+ 
+ // Counter returns the current value of the counter name.
+@@ -50,24 +51,29 @@
+ 	return r.value(r.gauges, name)
+ }
+ 
+-func (r *Registry) cell(m map[string]*int64, name string) *int64 {
++func (r *Registry) cell(m map[string]*atomic.Int64, name string) *atomic.Int64 {
+ 	r.mu.RLock()
+ 	c, ok := m[name]
+ 	r.mu.RUnlock()
+-	if !ok {
+-		r.mu.Lock()
+-		c = new(int64)
+-		m[name] = c
+-		r.mu.Unlock()
++	if ok {
++		return c
+ 	}
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	// Another goroutine may have created the cell after the read lock was released.
++	if c, ok := m[name]; ok {
++		return c
++	}
++	c = new(atomic.Int64)
++	m[name] = c
+ 	return c
+ }
+ 
+-func (r *Registry) value(m map[string]*int64, name string) int64 {
++func (r *Registry) value(m map[string]*atomic.Int64, name string) int64 {
+ 	r.mu.RLock()
+ 	defer r.mu.RUnlock()
+ 	if c, ok := m[name]; ok {
+-		return *c
++		return c.Load()
+ 	}
+ 	return 0
+ }
+@@ -83,7 +89,7 @@
+ 	return err
+ }
+ 
+-func writeFamily(b *strings.Builder, kind string, m map[string]*int64) {
++func writeFamily(b *strings.Builder, kind string, m map[string]*atomic.Int64) {
+ 	lastBase := ""
+ 	for _, name := range slices.Sorted(maps.Keys(m)) {
+ 		base, _, _ := strings.Cut(name, "{")
+@@ -91,6 +97,6 @@
+ 			fmt.Fprintf(b, "# TYPE %s %s\n", base, kind)
+ 			lastBase = base
+ 		}
+-		fmt.Fprintf(b, "%s %d\n", name, *m[name])
++		fmt.Fprintf(b, "%s %d\n", name, m[name].Load())
+ 	}
+ }

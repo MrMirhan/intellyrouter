@@ -1,0 +1,31 @@
+diff -ruN a/cli.go b/cli.go
+--- a/cli.go
++++ b/cli.go
+@@ -21,10 +21,24 @@
+ 	opts := options{lines: 10}
+ 	for i := 0; i < len(args); i++ {
+ 		arg := args[i]
++		if arg == "--" {
++			opts.files = append(opts.files, args[i+1:]...)
++			break
++		}
++		name, value, hasValue := strings.Cut(arg, "=")
+ 		switch {
+-		case arg == "-n" || arg == "--lines":
+-			i++
+-			n, _ := strconv.Atoi(args[i])
++		case name == "-n" || name == "--lines":
++			if !hasValue {
++				if i+1 >= len(args) {
++					return opts, fmt.Errorf("flag %s needs a value", name)
++				}
++				i++
++				value = args[i]
++			}
++			n, err := strconv.Atoi(value)
++			if err != nil || n < 0 {
++				return opts, fmt.Errorf("invalid line count %q", value)
++			}
+ 			opts.lines = n
+ 		case arg == "-q" || arg == "--quiet":
+ 			opts.quiet = true

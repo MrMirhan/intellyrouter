@@ -1,0 +1,153 @@
+diff -ruN a/rules.py b/rules.py
+--- a/rules.py
++++ b/rules.py
+@@ -0,0 +1,62 @@
++"""Pricing rules. shipping.quote applies them in order to build a quote."""
++
++from decimal import ROUND_HALF_UP, Decimal
++
++CENT = Decimal("0.01")
++BASE_RATE = {1: Decimal("4.90"), 2: Decimal("9.90"), 3: Decimal("24.90")}
++PER_EXTRA_KG = {1: Decimal("0.50"), 2: Decimal("1.20"), 3: Decimal("4.00")}
++EXPRESS_MINIMUM_ZONE_3 = Decimal("15.00")
++DANGEROUS_GOODS_FEE = Decimal("12.00")
++VOLUME_DISCOUNT_THRESHOLD = Decimal("100.00")
++
++
++def _service(order: dict) -> str:
++    return order.get("service", "standard")
++
++
++class BaseRate:
++    name = "base"
++
++    def apply(self, order, quote):
++        quote.add(self.name, BASE_RATE[quote.zone] + PER_EXTRA_KG[quote.zone] * (quote.kg - 1))
++
++
++class Express:
++    name = "express"
++
++    def apply(self, order, quote):
++        if _service(order) != "express":
++            return
++        extra = (quote.total * Decimal("0.5")).quantize(CENT, rounding=ROUND_HALF_UP)
++        if quote.zone == 3:
++            extra = max(extra, EXPRESS_MINIMUM_ZONE_3)
++        quote.add(self.name, extra)
++
++
++class DangerousGoods:
++    name = "dangerous_goods"
++
++    def apply(self, order, quote):
++        if not any(item.get("dangerous", False) for item in order["items"]):
++            return
++        if quote.zone == 3:
++            raise ValueError("dangerous goods cannot be shipped to zone 3")
++        quote.add(self.name, DANGEROUS_GOODS_FEE)
++
++
++class Coupon:
++    name = "coupon"
++
++    def apply(self, order, quote):
++        if order.get("coupon") == "FREESHIP" and quote.zone == 1 and _service(order) == "standard":
++            quote.add(self.name, -quote.total)
++
++
++class VolumeDiscount:
++    name = "volume_discount"
++
++    def apply(self, order, quote):
++        cost = quote.total
++        if cost > 0 and quote.subtotal >= VOLUME_DISCOUNT_THRESHOLD and quote.zone != 3:
++            discount = (cost * Decimal("0.2")).quantize(CENT, rounding=ROUND_HALF_UP)
++            quote.add(self.name, -discount)
+diff -ruN a/shipping.py b/shipping.py
+--- a/shipping.py
++++ b/shipping.py
+@@ -1,17 +1,32 @@
+ """Shipping cost quotes."""
+ 
+-from decimal import ROUND_HALF_UP, Decimal
++from dataclasses import dataclass, field
++from decimal import Decimal
+ 
+-CENT = Decimal("0.01")
++from rules import BaseRate, Coupon, DangerousGoods, Express, VolumeDiscount
++
+ ZONES = {"DE": 1, "AT": 2, "FR": 2, "NL": 2, "US": 3, "JP": 3}
+-BASE_RATE = {1: Decimal("4.90"), 2: Decimal("9.90"), 3: Decimal("24.90")}
+-PER_EXTRA_KG = {1: Decimal("0.50"), 2: Decimal("1.20"), 3: Decimal("4.00")}
+-EXPRESS_MINIMUM_ZONE_3 = Decimal("15.00")
+-DANGEROUS_GOODS_FEE = Decimal("12.00")
+-VOLUME_DISCOUNT_THRESHOLD = Decimal("100.00")
+ 
+ 
+-def quote(order: dict) -> dict:
++@dataclass
++class Quote:
++    zone: int
++    kg: int
++    subtotal: Decimal
++    lines: list[tuple[str, Decimal]] = field(default_factory=list)
++
++    def add(self, name: str, amount: Decimal) -> None:
++        self.lines.append((name, amount))
++
++    @property
++    def total(self) -> Decimal:
++        return sum((amount for _, amount in self.lines), Decimal("0"))
++
++
++DEFAULT_RULES = (BaseRate(), Express(), DangerousGoods(), Coupon(), VolumeDiscount())
++
++
++def quote(order: dict, rules=DEFAULT_RULES) -> dict:
+     zone = ZONES.get(order["destination"])
+     if zone is None:
+         raise ValueError(f"unsupported destination {order['destination']!r}")
+@@ -20,34 +35,11 @@
+     weight_g = sum(item["weight_g"] * item["qty"] for item in items)
+     if weight_g <= 0:
+         raise ValueError("order has no weight")
+-    kg = -(-weight_g // 1000)
+-    subtotal = sum((item["price"] * item["qty"] for item in items), Decimal("0"))
+-    service = order.get("service", "standard")
+-    lines = []
+-
+-    cost = BASE_RATE[zone] + PER_EXTRA_KG[zone] * (kg - 1)
+-    lines.append(("base", cost))
+-
+-    if service == "express":
+-        extra = (cost * Decimal("0.5")).quantize(CENT, rounding=ROUND_HALF_UP)
+-        if zone == 3:
+-            extra = max(extra, EXPRESS_MINIMUM_ZONE_3)
+-        lines.append(("express", extra))
+-        cost += extra
+-
+-    if any(item.get("dangerous", False) for item in items):
+-        if zone == 3:
+-            raise ValueError("dangerous goods cannot be shipped to zone 3")
+-        lines.append(("dangerous_goods", DANGEROUS_GOODS_FEE))
+-        cost += DANGEROUS_GOODS_FEE
+-
+-    if order.get("coupon") == "FREESHIP" and zone == 1 and service == "standard":
+-        lines.append(("coupon", -cost))
+-        cost -= cost
+-
+-    if cost > 0 and subtotal >= VOLUME_DISCOUNT_THRESHOLD and zone != 3:
+-        discount = (cost * Decimal("0.2")).quantize(CENT, rounding=ROUND_HALF_UP)
+-        lines.append(("volume_discount", -discount))
+-        cost -= discount
+-
+-    return {"zone": zone, "kg": kg, "lines": lines, "total": cost}
++    q = Quote(
++        zone=zone,
++        kg=-(-weight_g // 1000),
++        subtotal=sum((item["price"] * item["qty"] for item in items), Decimal("0")),
++    )
++    for rule in rules:
++        rule.apply(order, q)
++    return {"zone": q.zone, "kg": q.kg, "lines": q.lines, "total": q.total}

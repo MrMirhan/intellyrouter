@@ -1,0 +1,57 @@
+diff -ruN a/export.go b/export.go
+--- a/export.go
++++ b/export.go
+@@ -7,11 +7,17 @@
+ 
+ // ExportCSV renders events as CSV with an id,time,source header.
+ func ExportCSV(events []Event) string {
+-	out := "id,time,source\n"
++	var b strings.Builder
++	b.WriteString("id,time,source\n")
+ 	for _, e := range events {
+-		out += csvField(e.ID) + "," + e.Time.UTC().Format(time.RFC3339Nano) + "," + csvField(e.Source) + "\n"
++		b.WriteString(csvField(e.ID))
++		b.WriteByte(',')
++		b.WriteString(e.Time.UTC().Format(time.RFC3339Nano))
++		b.WriteByte(',')
++		b.WriteString(csvField(e.Source))
++		b.WriteByte('\n')
+ 	}
+-	return out
++	return b.String()
+ }
+ 
+ func csvField(s string) string {
+diff -ruN a/merge.go b/merge.go
+--- a/merge.go
++++ b/merge.go
+@@ -3,7 +3,6 @@
+ 
+ import (
+ 	"slices"
+-	"sort"
+ 	"time"
+ )
+ 
+@@ -20,15 +19,17 @@
+ 	for _, s := range streams {
+ 		all = append(all, s...)
+ 	}
+-	sort.SliceStable(all, func(i, j int) bool {
+-		return all[i].Time.Before(all[j].Time)
++	slices.SortStableFunc(all, func(a, b Event) int {
++		return a.Time.Compare(b.Time)
+ 	})
+ 
+-	var out []Event
++	seen := make(map[string]struct{}, len(all))
++	out := make([]Event, 0, len(all))
+ 	for _, e := range all {
+-		if slices.ContainsFunc(out, func(o Event) bool { return o.ID == e.ID }) {
++		if _, dup := seen[e.ID]; dup {
+ 			continue
+ 		}
++		seen[e.ID] = struct{}{}
+ 		out = append(out, e)
+ 	}
+ 	return out

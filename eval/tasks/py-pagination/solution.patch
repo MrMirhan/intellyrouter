@@ -1,0 +1,31 @@
+diff -ruN a/pagination.py b/pagination.py
+--- a/pagination.py
++++ b/pagination.py
+@@ -24,8 +24,8 @@
+         raise ValueError("page must be 1 or greater")
+ 
+     total = len(items)
+-    total_pages = total // per_page
+-    start = page * per_page
++    total_pages = max(1, -(-total // per_page))
++    start = (page - 1) * per_page
+     chunk = list(items[start:start + per_page])
+     return Page(
+         items=chunk,
+@@ -43,12 +43,14 @@
+     if total_pages < 1:
+         return []
+     pages = {1, total_pages}
+-    pages.update(p for p in range(page - window, page + window) if 1 <= p <= total_pages)
++    pages.update(p for p in range(page - window, page + window + 1) if 1 <= p <= total_pages)
+ 
+     links: list[int | None] = []
+     prev = 0
+     for p in sorted(pages):
+-        if p - prev > 1:
++        if p - prev == 2:
++            links.append(prev + 1)
++        elif p - prev > 2:
+             links.append(None)
+         links.append(p)
+         prev = p

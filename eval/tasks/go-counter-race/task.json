@@ -1,0 +1,9 @@
+{
+  "id": "go-counter-race",
+  "language": "go",
+  "difficulty": "medium",
+  "prompt": "Our metrics package undercounts under load. In production http_requests_total ends up lower than the number of requests the load balancer says we served, and when I run the tests with `go test -race` the race detector reports data races in the registry. The README says every Registry method is safe for concurrent use. Please fix the concurrency problems so counters and gauges are exact no matter how many goroutines update and read them, without changing the public API or the WriteText output format. The tests run with -race.",
+  "test_command": ["go", "test", "-race", "./..."],
+  "protected": ["metrics_test.go"],
+  "timeout_seconds": 900
+}

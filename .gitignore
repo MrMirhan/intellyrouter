@@ -3,3 +3,5 @@
 /intelly-eval
 web/node_modules/
 web/dist/
+__pycache__/
+.DS_Store

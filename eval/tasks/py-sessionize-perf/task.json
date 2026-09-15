@@ -1,0 +1,9 @@
+{
+  "id": "py-sessionize-perf",
+  "language": "python",
+  "difficulty": "hard",
+  "prompt": "The nightly sessionization job has become too slow: on a normal day of clickstream data (about 60k events from 2,000 users) sessionize() runs for far longer than its time slot, while small inputs finish instantly. While you're in there, a few correctness issues were reported by analysts: two page views exactly 30 minutes apart get split into separate sessions, sessions that start at the same moment come out in arbitrary user order, and top_landing_pages orders pages with equal counts inconsistently. The README in the repo describes the intended rules. Please make sessions.py fast enough for a full day of traffic and correct according to the README. There's a test that simulates a full day with a time limit, plus unit tests (`python3 -m unittest`).",
+  "test_command": ["python3", "-m", "unittest"],
+  "protected": ["tests/__init__.py", "tests/test_sessions.py"],
+  "timeout_seconds": 900
+}

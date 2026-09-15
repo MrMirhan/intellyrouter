@@ -1,0 +1,9 @@
+{
+  "id": "py-sales-report",
+  "language": "python",
+  "difficulty": "medium",
+  "prompt": "The revenue-by-region table doesn't match the finance spreadsheet. Examples from March: EMEA's average order value shows 2.67 where finance has 2.68, and an April region share shows 4.7% where they have 4.8%. An order placed in New York at 23:30 on March 31 is counted in March, but finance books by UTC month, so it belongs to April. Pending orders are included in revenue, and regions with equal revenue come out in a random-looking order. The README in the repo describes exactly how the report should be calculated. Please fix report.py to match it. There are tests (`python3 -m unittest`).",
+  "test_command": ["python3", "-m", "unittest"],
+  "protected": ["tests/__init__.py", "tests/test_report.py"],
+  "timeout_seconds": 600
+}

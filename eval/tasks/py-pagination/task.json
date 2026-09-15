@@ -1,0 +1,9 @@
+{
+  "id": "py-pagination",
+  "language": "python",
+  "difficulty": "easy",
+  "prompt": "The admin order list is paginated wrong. Page 1 shows orders 21-40 instead of 1-20, the last partial page never shows up in the pager (45 orders with 20 per page reports 2 pages), and an empty list reports 0 pages so the template breaks. The pager links from page_links are also off: the page two after the current one is missing, and it shows a gap marker where only a single page is hidden. The rules are in the README. Please fix pagination.py; there are unit tests you can run with `python3 -m unittest`.",
+  "test_command": ["python3", "-m", "unittest"],
+  "protected": ["tests/__init__.py", "tests/test_pagination.py"],
+  "timeout_seconds": 600
+}

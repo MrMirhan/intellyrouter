@@ -1,0 +1,104 @@
+diff -ruN a/handler.go b/handler.go
+--- a/handler.go
++++ b/handler.go
+@@ -3,9 +3,12 @@
+ 
+ import (
+ 	"encoding/json"
++	"errors"
+ 	"mime"
+ 	"net/http"
+ 	"strconv"
++	"strings"
++	"unicode/utf8"
+ )
+ 
+ const (
+@@ -46,40 +49,61 @@
+ 
+ 	var req createRequest
+ 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes)).Decode(&req); err != nil {
+-		writeError(w, http.StatusInternalServerError, err.Error())
++		var tooLarge *http.MaxBytesError
++		if errors.As(err, &tooLarge) {
++			writeError(w, http.StatusRequestEntityTooLarge, "request body is too large")
++			return
++		}
++		writeError(w, http.StatusBadRequest, "invalid JSON body")
+ 		return
+ 	}
+-	if req.Title == "" {
+-		writeError(w, http.StatusBadRequest, "title is required")
++	title := strings.TrimSpace(req.Title)
++	if title == "" {
++		writeError(w, http.StatusUnprocessableEntity, "title is required")
+ 		return
+ 	}
+-	if len(req.Title) > maxTitleLen {
+-		writeError(w, http.StatusBadRequest, "title is too long")
++	if utf8.RuneCountInString(title) > maxTitleLen {
++		writeError(w, http.StatusUnprocessableEntity, "title is too long")
+ 		return
+ 	}
+ 
+-	note := h.store.Create(req.Title, req.Body)
+-	writeJSON(w, http.StatusOK, note)
++	note := h.store.Create(title, req.Body)
++	w.Header().Set("Location", "/notes/"+strconv.Itoa(note.ID))
++	writeJSON(w, http.StatusCreated, note)
+ }
+ 
+ func (h *handler) get(w http.ResponseWriter, r *http.Request) {
+-	id, err := strconv.Atoi(r.PathValue("id"))
+-	if err != nil {
++	id, ok := parseID(w, r)
++	if !ok {
++		return
++	}
++	note, ok := h.store.Get(id)
++	if !ok {
+ 		writeError(w, http.StatusNotFound, "note not found")
+ 		return
+ 	}
+-	note, _ := h.store.Get(id)
+ 	writeJSON(w, http.StatusOK, note)
+ }
+ 
+ func (h *handler) delete(w http.ResponseWriter, r *http.Request) {
+-	id, err := strconv.Atoi(r.PathValue("id"))
+-	if err != nil {
++	id, ok := parseID(w, r)
++	if !ok {
++		return
++	}
++	if !h.store.Delete(id) {
+ 		writeError(w, http.StatusNotFound, "note not found")
+ 		return
+ 	}
+-	h.store.Delete(id)
+-	writeJSON(w, http.StatusOK, map[string]bool{"deleted": true})
++	w.WriteHeader(http.StatusNoContent)
++}
++
++func parseID(w http.ResponseWriter, r *http.Request) (int, bool) {
++	id, err := strconv.Atoi(r.PathValue("id"))
++	if err != nil || id < 1 {
++		writeError(w, http.StatusBadRequest, "id must be a positive integer")
++		return 0, false
++	}
++	return id, true
+ }
+ 
+ func writeJSON(w http.ResponseWriter, status int, v any) {
+diff -ruN a/store.go b/store.go
+--- a/store.go
++++ b/store.go
+@@ -53,7 +53,7 @@
+ func (s *Store) List() []Note {
+ 	s.mu.Lock()
+ 	defer s.mu.Unlock()
+-	var out []Note
++	out := make([]Note, 0, len(s.notes))
+ 	for _, n := range s.notes {
+ 		out = append(out, n)
+ 	}

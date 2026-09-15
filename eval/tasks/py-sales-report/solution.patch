@@ -1,0 +1,62 @@
+diff -ruN a/report.py b/report.py
+--- a/report.py
++++ b/report.py
+@@ -2,22 +2,38 @@
+ 
+ import csv
+ from collections import defaultdict
++from datetime import datetime, timezone
++from decimal import ROUND_HALF_UP, Decimal
+ from typing import IO, Iterable
+ 
++CENT = Decimal("0.01")
++TENTH = Decimal("0.1")
+ 
++
+ def read_orders(fileobj: IO[str]) -> list[dict[str, str]]:
+     return list(csv.DictReader(fileobj))
+ 
+ 
++def _utc_month(timestamp: str) -> str:
++    placed_at = datetime.fromisoformat(timestamp)
++    if placed_at.utcoffset() is None:
++        raise ValueError(f"timestamp has no UTC offset: {timestamp!r}")
++    return placed_at.astimezone(timezone.utc).strftime("%Y-%m")
++
++
++def _round(value: Decimal, step: Decimal) -> str:
++    return str(value.quantize(step, rounding=ROUND_HALF_UP))
++
++
+ def monthly_summary(rows: Iterable[dict[str, str]]) -> list[dict]:
+-    groups: dict[tuple[str, str], dict] = defaultdict(lambda: {"orders": 0, "revenue": 0.0})
+-    month_totals: dict[str, float] = defaultdict(float)
++    groups: dict[tuple[str, str], dict] = defaultdict(lambda: {"orders": 0, "revenue": Decimal(0)})
++    month_totals: dict[str, Decimal] = defaultdict(Decimal)
+ 
+     for row in rows:
+-        if row["status"] == "refunded":
++        if row["status"] != "paid":
+             continue
+-        month = row["placed_at"][:7]
+-        amount = float(row["amount"])
++        month = _utc_month(row["placed_at"])
++        amount = Decimal(row["amount"])
+         group = groups[(month, row["region"])]
+         group["orders"] += 1
+         group["revenue"] += amount
+@@ -31,10 +47,10 @@
+                 "month": month,
+                 "region": region,
+                 "orders": group["orders"],
+-                "revenue": f"{round(revenue, 2):.2f}",
+-                "average": f"{round(revenue / group['orders'], 2):.2f}",
+-                "share": f"{round(100 * revenue / month_totals[month], 1):.1f}",
++                "revenue": _round(revenue, CENT),
++                "average": _round(revenue / group["orders"], CENT),
++                "share": _round(100 * revenue / month_totals[month], TENTH),
+             }
+         )
+-    summary.sort(key=lambda r: (r["month"], -float(r["revenue"])))
++    summary.sort(key=lambda r: (r["month"], -Decimal(r["revenue"]), r["region"]))
+     return summary

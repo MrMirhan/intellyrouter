@@ -1,0 +1,39 @@
+diff -ruN a/sessions.py b/sessions.py
+--- a/sessions.py
++++ b/sessions.py
+@@ -28,26 +28,23 @@
+ 
+ 
+ def sessionize(events: Iterable[Event], gap: timedelta = DEFAULT_GAP) -> list[Session]:
+-    unique: list[Event] = []
+-    for event in events:
+-        if event not in unique:
+-            unique.append(event)
++    unique = dict.fromkeys(events)
+ 
+     sessions: list[Session] = []
++    last_session: dict[str, Session] = {}
+     for event in sorted(unique, key=lambda e: e.timestamp):
+-        current = None
+-        for session in reversed(sessions):
+-            if session.user == event.user:
+-                current = session
+-                break
+-        if current is not None and event.timestamp - current.end < gap:
++        current = last_session.get(event.user)
++        if current is not None and event.timestamp - current.end <= gap:
+             current.end = event.timestamp
+             current.pages.append(event.page)
+         else:
+-            sessions.append(Session(event.user, event.timestamp, event.timestamp, [event.page]))
++            current = Session(event.user, event.timestamp, event.timestamp, [event.page])
++            sessions.append(current)
++            last_session[event.user] = current
++    sessions.sort(key=lambda s: (s.start, s.user))
+     return sessions
+ 
+ 
+ def top_landing_pages(sessions: Iterable[Session], n: int = 10) -> list[tuple[str, int]]:
+     counts = Counter(session.pages[0] for session in sessions)
+-    return counts.most_common(n)
++    return sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:n]

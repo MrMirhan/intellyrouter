@@ -1,0 +1,9 @@
+{
+  "id": "go-lru-eviction",
+  "language": "go",
+  "difficulty": "easy",
+  "prompt": "Our LRU cache in lru.go evicts the wrong entries. If I put \"a\" and \"b\" into a cache with capacity 2, read \"a\" with Get, and then put \"c\", the cache throws away \"a\" even though it was just read. Updating an existing key with Put has the same problem. Get and Put should both count as a use of the key, so the evicted entry is always the one used least recently, and Keys() should list keys from most to least recently used. Peek must keep its current behavior and not change the order. There are tests in the repo; please fix the cache so they pass.",
+  "test_command": ["go", "test", "-race", "./..."],
+  "protected": ["lru_test.go"],
+  "timeout_seconds": 600
+}

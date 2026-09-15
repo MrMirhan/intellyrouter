@@ -1,0 +1,53 @@
+diff -ruN a/sla.py b/sla.py
+--- a/sla.py
++++ b/sla.py
+@@ -13,7 +13,7 @@
+     holidays: frozenset[date] = frozenset()
+ 
+     def is_business_day(self, day: date) -> bool:
+-        return day.weekday() in self.workdays
++        return day.weekday() in self.workdays and day not in self.holidays
+ 
+     def opening(self, day: date) -> datetime:
+         return datetime.combine(day, self.opens, tzinfo=self.tz)
+@@ -22,9 +22,15 @@
+         return datetime.combine(day, self.closes, tzinfo=self.tz)
+ 
+ 
++def _to_calendar_tz(cal: BusinessCalendar, moment: datetime) -> datetime:
++    if moment.utcoffset() is None:
++        raise ValueError(f"datetime must be timezone-aware: {moment!r}")
++    return moment.astimezone(cal.tz)
++
++
+ def add_business_time(cal: BusinessCalendar, opened_at: datetime, duration: timedelta) -> datetime:
+     """Return the moment when `duration` of business time has passed after opened_at."""
+-    current = opened_at
++    current = _to_calendar_tz(cal, opened_at)
+     remaining = duration
+     day = current.date()
+     while True:
+@@ -32,7 +38,7 @@
+             start = max(current, cal.opening(day))
+             available = cal.closing(day) - start
+             if available > timedelta(0):
+-                if remaining < available:
++                if remaining <= available:
+                     return start + remaining
+                 remaining -= available
+         day += timedelta(days=1)
+@@ -41,7 +47,7 @@
+ 
+ def business_time_between(cal: BusinessCalendar, start: datetime, end: datetime) -> timedelta:
+     """Business time that passes between start and end."""
+-    start, end = start.astimezone(cal.tz), end.astimezone(cal.tz)
++    start, end = _to_calendar_tz(cal, start), _to_calendar_tz(cal, end)
+     total = timedelta(0)
+     day = start.date()
+     while day <= end.date():
+@@ -55,4 +61,4 @@
+ 
+ 
+ def is_breached(cal: BusinessCalendar, opened_at: datetime, duration: timedelta, now: datetime) -> bool:
+-    return now >= add_business_time(cal, opened_at, duration)
++    return _to_calendar_tz(cal, now) > add_business_time(cal, opened_at, duration)

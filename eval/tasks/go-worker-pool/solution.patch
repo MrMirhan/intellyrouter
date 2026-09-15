@@ -1,0 +1,107 @@
+diff -ruN a/itemerror.go b/itemerror.go
+--- a/itemerror.go
++++ b/itemerror.go
+@@ -11,3 +11,7 @@
+ func (e *ItemError) Error() string {
+ 	return fmt.Sprintf("item %d: %v", e.Index, e.Err)
+ }
++
++func (e *ItemError) Unwrap() error {
++	return e.Err
++}
+diff -ruN a/pool.go b/pool.go
+--- a/pool.go
++++ b/pool.go
+@@ -1,49 +1,70 @@
+ // Package batch runs a function over many items with bounded concurrency.
+ package batch
+ 
+-import "context"
++import (
++	"context"
++	"sync"
++)
+ 
+-type result[R any] struct {
+-	index int
+-	value R
+-	err   error
+-}
+-
+ // Run calls fn for each item using at most workers concurrent calls and
+ // returns the results in input order. See the README for the error contract.
+ func Run[T, R any](ctx context.Context, items []T, workers int, fn func(context.Context, T) (R, error)) ([]R, error) {
+ 	if workers < 1 {
+ 		workers = 1
+ 	}
+-	ctx, cancel := context.WithCancel(ctx)
++	parent := ctx
++	ctx, cancel := context.WithCancel(parent)
+ 	defer cancel()
+ 
+-	jobs := make(chan int)
+-	results := make(chan result[R])
++	var (
++		failOnce sync.Once
++		firstErr error
++	)
++	// fail keeps only the first error; errors caused by the cancellation it
++	// triggers arrive later and are dropped.
++	fail := func(err error) {
++		failOnce.Do(func() {
++			firstErr = err
++			cancel()
++		})
++	}
+ 
++	jobs := make(chan int)
+ 	go func() {
++		defer close(jobs)
+ 		for i := range items {
+-			jobs <- i
++			select {
++			case jobs <- i:
++			case <-ctx.Done():
++				return
++			}
+ 		}
+-		close(jobs)
+ 	}()
+ 
++	out := make([]R, len(items))
++	var wg sync.WaitGroup
+ 	for range workers {
+-		go func() {
++		wg.Go(func() {
+ 			for i := range jobs {
++				if ctx.Err() != nil {
++					continue
++				}
+ 				v, err := fn(ctx, items[i])
+-				results <- result[R]{index: i, value: v, err: err}
++				if err != nil {
++					fail(&ItemError{Index: i, Err: err})
++					continue
++				}
++				out[i] = v
+ 			}
+-		}()
++		})
+ 	}
++	wg.Wait()
+ 
+-	out := make([]R, len(items))
+-	for range items {
+-		r := <-results
+-		if r.err != nil {
+-			return nil, &ItemError{Index: r.index, Err: r.err}
+-		}
+-		out[r.index] = r.value
++	if err := parent.Err(); err != nil {
++		return nil, err
++	}
++	if firstErr != nil {
++		return nil, firstErr
+ 	}
+ 	return out, nil
+ }

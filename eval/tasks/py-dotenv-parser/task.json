@@ -1,0 +1,9 @@
+{
+  "id": "py-dotenv-parser",
+  "language": "python",
+  "difficulty": "easy",
+  "prompt": "Our .env loader (envfile.py) breaks on values that are common in real config files. A DATABASE_URL with `?sslmode=require` crashes with `ValueError: too many values to unpack`, `PASSWORD=\"abc#123\"` comes back as `\"abc` because everything after `#` is cut off even inside quotes, `THEME_COLOR=#1d4ed8` becomes empty, and escapes like `\\n` inside double quotes are not processed. The README documents the syntax we want to support. Please fix the parser so it follows the README, including raising ParseError with the right line number for invalid lines. Tests are in tests/ and run with `python3 -m unittest`.",
+  "test_command": ["python3", "-m", "unittest"],
+  "protected": ["tests/__init__.py", "tests/test_envfile.py"],
+  "timeout_seconds": 600
+}

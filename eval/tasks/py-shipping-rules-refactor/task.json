@@ -1,0 +1,9 @@
+{
+  "id": "py-shipping-rules-refactor",
+  "language": "python",
+  "difficulty": "medium",
+  "prompt": "shipping.quote() has grown into one long function and every pricing change touches all of it. Please refactor it into separate rules without changing any price. Create rules.py with one class per pricing step: BaseRate, Express, DangerousGoods, Coupon and VolumeDiscount. Each class has a `name` attribute (\"base\", \"express\", \"dangerous_goods\", \"coupon\", \"volume_discount\") and an `apply(order, quote)` method that adds lines to the quote or raises ValueError. In shipping.py, add a `Quote` dataclass with `zone`, `kg`, `subtotal`, a `lines` list of (name, amount) tuples, an `add(name, amount)` method and a `total` property that sums the lines, and a `DEFAULT_RULES` tuple with one instance of each rule in the order above. `quote(order, rules=DEFAULT_RULES)` should work out the zone, weight and subtotal, run the rules in order, and return the same dict as it does today, so callers can drop or insert rules. tests/test_shipping.py pins the current prices and must keep passing; tests/test_rules.py covers the new structure. Run them with `python3 -m unittest`.",
+  "test_command": ["python3", "-m", "unittest"],
+  "protected": ["tests/__init__.py", "tests/test_shipping.py", "tests/test_rules.py"],
+  "timeout_seconds": 600
+}

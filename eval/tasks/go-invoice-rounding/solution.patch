@@ -1,0 +1,79 @@
+diff -ruN a/discount.go b/discount.go
+--- a/discount.go
++++ b/discount.go
+@@ -1,5 +1,10 @@
+ package billing
+ 
++import (
++	"cmp"
++	"slices"
++)
++
+ // Discount is a promotion applied to a whole invoice. Set either PercentBP or
+ // Fixed.
+ type Discount struct {
+@@ -16,7 +21,7 @@
+ 	for _, n := range nets {
+ 		subtotal += n
+ 	}
+-	if subtotal <= 0 || subtotal <= d.MinSubtotal {
++	if subtotal <= 0 || subtotal < d.MinSubtotal {
+ 		return out
+ 	}
+ 
+@@ -27,8 +32,21 @@
+ 	}
+ 	if d.Fixed > 0 {
+ 		fixed := min(d.Fixed, subtotal)
++		remainders := make([]Cents, len(nets))
++		order := make([]int, len(nets))
++		var given Cents
+ 		for i, n := range nets {
+ 			out[i] = fixed * n / subtotal
++			remainders[i] = fixed * n % subtotal
++			given += out[i]
++			order[i] = i
++		}
++		slices.SortStableFunc(order, func(a, b int) int {
++			return cmp.Compare(remainders[b], remainders[a])
++		})
++		for k := 0; given < fixed; k++ {
++			out[order[k]]++
++			given++
+ 		}
+ 	}
+ 	return out
+diff -ruN a/invoice.go b/invoice.go
+--- a/invoice.go
++++ b/invoice.go
+@@ -40,7 +40,7 @@
+ 
+ 	var inv Invoice
+ 	for i, in := range inputs {
+-		tax, err := rates.lineTax(in.Category, nets[i])
++		tax, err := rates.lineTax(in.Category, nets[i]-discounts[i])
+ 		if err != nil {
+ 			return Invoice{}, err
+ 		}
+diff -ruN a/money.go b/money.go
+--- a/money.go
++++ b/money.go
+@@ -15,7 +15,16 @@
+ 	return fmt.Sprintf("%s%d.%02d", sign, c/100, c%100)
+ }
+ 
+-// applyRate returns amount × bp / 10000 in cents.
++// applyRate returns amount × bp / 10000 rounded to the nearest cent, with
++// halves rounded away from zero.
+ func applyRate(amount Cents, bp int64) Cents {
+-	return Cents(int64(amount) * bp / 10000)
++	n := int64(amount) * bp
++	q, r := n/10000, n%10000
++	switch {
++	case r >= 5000:
++		q++
++	case r <= -5000:
++		q--
++	}
++	return Cents(q)
+ }

@@ -1,0 +1,9 @@
+{
+  "id": "go-dedupe-perf",
+  "language": "go",
+  "difficulty": "medium",
+  "prompt": "The daily audit-log export has become unusably slow. With a normal day of traffic (about 150k events from three shards) Merge followed by ExportCSV runs for many minutes, and the test that simulates a full day times out. Small inputs produce correct output. Please find what makes it slow and fix it. The ordering and deduplication rules described in the README must not change, and the CSV output must stay byte-for-byte the same. There are tests for correctness and for the full-day run.",
+  "test_command": ["go", "test", "-race", "./..."],
+  "protected": ["eventlog_test.go"],
+  "timeout_seconds": 900
+}

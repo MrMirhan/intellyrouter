@@ -1,0 +1,9 @@
+{
+  "id": "go-duration-config",
+  "language": "go",
+  "difficulty": "easy",
+  "prompt": "Two problems with duration.Parse, which we use for durations in service config. First, millisecond values are rejected: setting cache_ttl to \"250ms\" fails with `duration: missing number in \"250ms\"`, and combinations such as \"1m30s500ms\" fail the same way. Second, fractional values are silently truncated: \"1.5h\" comes back as 1h and \"0.5d\" as 0s. The README describes the supported syntax (ms, s, m, h, d, w, combined units, fractional parts). Please fix Parse so all of that works, and make sure malformed numbers like \"1..5h\" or \"1.5.2h\" return an error instead of being accepted. The existing tests cover these cases.",
+  "test_command": ["go", "test", "-race", "./..."],
+  "protected": ["duration_test.go"],
+  "timeout_seconds": 600
+}

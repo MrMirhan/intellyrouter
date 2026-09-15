@@ -1,0 +1,40 @@
+diff -ruN a/duration.go b/duration.go
+--- a/duration.go
++++ b/duration.go
+@@ -4,6 +4,7 @@
+ import (
+ 	"errors"
+ 	"fmt"
++	"math"
+ 	"strconv"
+ 	"strings"
+ 	"time"
+@@ -14,12 +15,13 @@
+ 	size   time.Duration
+ }
+ 
++// Longer suffixes come first so "ms" is not read as "m".
+ var units = []unit{
++	{"ms", time.Millisecond},
+ 	{"w", 7 * 24 * time.Hour},
+ 	{"d", 24 * time.Hour},
+ 	{"h", time.Hour},
+ 	{"m", time.Minute},
+-	{"ms", time.Millisecond},
+ 	{"s", time.Second},
+ }
+ 
+@@ -47,11 +49,11 @@
+ 		}
+ 		s = s[len(u.suffix):]
+ 
+-		n, err := strconv.Atoi(strings.Split(num, ".")[0])
++		f, err := strconv.ParseFloat(num, 64)
+ 		if err != nil {
+ 			return 0, fmt.Errorf("duration: invalid number %q in %q", num, orig)
+ 		}
+-		total += time.Duration(n) * u.size
++		total += time.Duration(math.Round(f * float64(u.size)))
+ 	}
+ 	return total, nil
+ }

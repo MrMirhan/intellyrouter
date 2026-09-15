@@ -1,0 +1,9 @@
+{
+  "id": "py-inventory-reservations",
+  "language": "python",
+  "difficulty": "hard",
+  "prompt": "Stock numbers from the inventory package drift over the day and we're overselling or blocking sales. Things we've noticed: the last unit of a product can never be reserved; stock held by abandoned checkouts stays blocked after the 15-minute TTL until someone happens to call stock(); when the payment page retries a cancel, available stock goes up twice; and after a periodic expire_due() run, products that were already sold or cancelled show more available stock than we actually have. The README describes the reservation lifecycle we want (states, expiry moment, what cancel and commit may do). Please find the bugs in the package and fix them so the service follows the README. Tests are in tests/ (`python3 -m unittest`).",
+  "test_command": ["python3", "-m", "unittest"],
+  "protected": ["tests/__init__.py", "tests/test_reservations.py"],
+  "timeout_seconds": 900
+}

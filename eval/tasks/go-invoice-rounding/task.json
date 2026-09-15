@@ -1,0 +1,9 @@
+{
+  "id": "go-invoice-rounding",
+  "language": "go",
+  "difficulty": "hard",
+  "prompt": "Finance reports that our invoices don't match the ERP. The differences are usually one or two cents, but sometimes more: a book line with 3 x 19.99 at 7% tax shows 4.19 tax where the ERP has 4.20; a SPRING15 coupon is not applied when the subtotal is exactly the 50.00 minimum; a fixed 10.00 discount spread over three lines only takes 9.99 off; and tax on discounted invoices is too high. The calculation rules we agreed with finance are in the README. Please go through the billing package and make Build follow those rules exactly. Tests with the expected numbers from the ERP are included.",
+  "test_command": ["go", "test", "-race", "./..."],
+  "protected": ["invoice_test.go"],
+  "timeout_seconds": 900
+}

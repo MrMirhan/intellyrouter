@@ -1,0 +1,9 @@
+{
+  "id": "go-http-status",
+  "language": "go",
+  "difficulty": "medium",
+  "prompt": "The notes API returns the wrong HTTP status codes in several places, and our frontend team is working around it. Some examples: POST /notes returns 200 with no Location header instead of 201, malformed JSON returns 500, a blank title returns 400 (and a title of only spaces is accepted), GET /notes/99 for a note that doesn't exist returns 200 with an empty note, and DELETE returns 200 with a JSON body. GET /notes on an empty store returns null instead of an empty array. The README documents the intended contract (status codes, the 1 MiB body limit, the 120-character title limit, the JSON error body format). Please make the handlers follow the README. Tests exist for the API.",
+  "test_command": ["go", "test", "-race", "./..."],
+  "protected": ["handler_test.go"],
+  "timeout_seconds": 900
+}

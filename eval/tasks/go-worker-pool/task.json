@@ -1,0 +1,9 @@
+{
+  "id": "go-worker-pool",
+  "language": "go",
+  "difficulty": "hard",
+  "prompt": "batch.Run misbehaves as soon as one item fails. In our bulk import job one bad row makes the whole process hang: Run never returns, and goroutine dumps show workers stuck forever. In other runs Run returns an error while some calls are still running in the background, and errors.Is can't match the underlying error through the *ItemError it returns. Cancelling the parent context doesn't stop the batch either. The README describes the contract Run is supposed to follow (first error wins and cancels the rest, no new calls after a failure or cancellation, Run waits for every started call, results in input order, bounded concurrency). Please fix the package so it follows that contract. The tests run with -race and include deadlines, so a deadlock shows up as a test failure.",
+  "test_command": ["go", "test", "-race", "./..."],
+  "protected": ["pool_test.go"],
+  "timeout_seconds": 900
+}

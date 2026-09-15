@@ -1,0 +1,19 @@
+diff -ruN a/lru.go b/lru.go
+--- a/lru.go
++++ b/lru.go
+@@ -32,6 +32,7 @@
+ // Get returns the value for key and marks the key as recently used.
+ func (c *Cache[K, V]) Get(key K) (V, bool) {
+ 	if el, ok := c.items[key]; ok {
++		c.ll.MoveToFront(el)
+ 		return el.Value.(*entry[K, V]).value, true
+ 	}
+ 	var zero V
+@@ -51,6 +52,7 @@
+ func (c *Cache[K, V]) Put(key K, value V) {
+ 	if el, ok := c.items[key]; ok {
+ 		el.Value.(*entry[K, V]).value = value
++		c.ll.MoveToFront(el)
+ 		return
+ 	}
+ 	c.items[key] = c.ll.PushFront(&entry[K, V]{key: key, value: value})

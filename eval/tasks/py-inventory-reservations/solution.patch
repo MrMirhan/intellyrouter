@@ -1,0 +1,55 @@
+diff -ruN a/inventory/models.py b/inventory/models.py
+--- a/inventory/models.py
++++ b/inventory/models.py
+@@ -16,4 +16,4 @@
+     state: str = ACTIVE
+ 
+     def is_expired(self, now: datetime) -> bool:
+-        return now > self.expires_at
++        return now >= self.expires_at
+diff -ruN a/inventory/service.py b/inventory/service.py
+--- a/inventory/service.py
++++ b/inventory/service.py
+@@ -23,8 +23,9 @@
+     def reserve(self, sku: str, qty: int) -> Reservation:
+         if qty <= 0:
+             raise ValueError("qty must be positive")
++        self.expire_due()
+         available = self.store.available(sku)
+-        if qty >= available:
++        if qty > available:
+             raise OutOfStock(sku, qty, available)
+         reservation = Reservation(self._new_id(), sku, qty, self.clock() + self.ttl)
+         self.store.hold(reservation)
+@@ -42,6 +43,10 @@
+ 
+     def cancel(self, reservation_id: str) -> None:
+         reservation = self.store.get(reservation_id)
++        if reservation.state == COMMITTED:
++            raise InvalidState(f"reservation {reservation_id} is already committed")
++        if reservation.state != ACTIVE:
++            return
+         self.store.release(reservation)
+         reservation.state = RELEASED
+ 
+diff -ruN a/inventory/store.py b/inventory/store.py
+--- a/inventory/store.py
++++ b/inventory/store.py
+@@ -1,7 +1,7 @@
+ from collections import defaultdict
+ 
+ from .errors import UnknownReservation
+-from .models import Reservation
++from .models import ACTIVE, Reservation
+ 
+ 
+ class StockStore:
+@@ -31,7 +31,7 @@
+             raise UnknownReservation(reservation_id) from None
+ 
+     def active_reservations(self) -> list[Reservation]:
+-        return list(self._reservations.values())
++        return [r for r in self._reservations.values() if r.state == ACTIVE]
+ 
+     def hold(self, reservation: Reservation) -> None:
+         self._reservations[reservation.id] = reservation
