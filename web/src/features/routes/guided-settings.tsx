@@ -157,6 +157,17 @@ export function GuidedSettingsFields({
               ? "The gateway cannot call a subscription model on its own. At a checkpoint, Claude Code's request goes to the director, so the director does that step itself. Executors get no written guidance."
               : "At a checkpoint, the gateway sends the director a text copy of the session and adds its guidance to the executor's request. Claude Code does not see the guidance."}
           </p>
+          <SwitchRow
+            id="director-consult"
+            label="Executor can ask the director"
+            description={
+              subscriptionDirector
+                ? "Needs a director on an API key. A subscription director cannot answer questions."
+                : "The executor gets an ask_director tool. The gateway gets the director's answer and continues the same response. Claude Code does not see the question."
+            }
+            checked={settings.consult}
+            onChange={(consult) => onChange({ ...settings, consult })}
+          />
           <div className="grid gap-3 sm:grid-cols-2">
             <CountField
               id="director-max-calls"

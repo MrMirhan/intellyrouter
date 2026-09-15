@@ -102,11 +102,99 @@ func (s *Server) guided(w http.ResponseWriter, r *http.Request, route store.Rout
 			note += "; guidance not added: " + err.Error()
 		}
 	}
-	leg := s.call(w, r, executor, clientRequest{body: body, stream: cr.stream, claudeAuth: cr.claudeAuth})
+	exec := clientRequest{body: body, stream: cr.stream, claudeAuth: cr.claudeAuth}
+	if settings.Consult && cr.stream && turn.HasTools &&
+		director.config.Type != provider.AnthropicSubscription && executor.config.Type != provider.AnthropicSubscription {
+		if withTool, added, err := guided.AddConsultTool(body); err == nil && added {
+			exec.body = withTool
+			s.runWithConsult(w, r, e, exec, consultRun{settings: settings, director: director, executor: executor, key: key, state: st, note: note})
+			return
+		}
+	}
+	leg := s.call(w, r, executor, exec)
 	leg.Role = ledger.RoleExecutor
 	leg.Note = joinNote(note, leg.Note)
 	e.Legs = append(e.Legs, leg)
 	e.Finish(leg.Status, leg.HTTPStatus, leg.Error)
+}
+
+// maxQuestionsPerRequest limits the hidden continuations of one client request.
+const maxQuestionsPerRequest = 3
+
+const (
+	answerLimit       = "The director cannot answer more questions in this turn. Continue with your best judgment."
+	answerUnavailable = "The director is not available now. Continue with your best judgment."
+)
+
+type consultRun struct {
+	settings guided.Settings
+	director target
+	executor target
+	key      string
+	state    guided.State
+	note     string
+}
+
+// runWithConsult calls the executor with the ask_director tool. The gateway
+// answers each question with the director and continues the executor's
+// response, so Claude Code receives one message without the hidden exchange.
+func (s *Server) runWithConsult(w http.ResponseWriter, r *http.Request, e *ledger.Entry, cr clientRequest, run consultRun) {
+	cw := newConsultWriter(w)
+	defer cw.keepAlive(pingInterval)()
+	body, note := cr.body, run.note
+	var leg ledger.Leg
+	for questions := 0; ; questions++ {
+		leg = s.call(cw, r, run.executor, clientRequest{body: body, stream: true, claudeAuth: cr.claudeAuth})
+		leg.Role = ledger.RoleExecutor
+		leg.Note = joinNote(note, leg.Note)
+		e.Legs = append(e.Legs, leg)
+		call, ok := cw.endSegment()
+		if !ok {
+			break
+		}
+		answer := answerLimit
+		if questions < maxQuestionsPerRequest && run.state.DirectorCalls < run.settings.Director.MaxCallsPerTurn {
+			answer = s.answerQuestion(r.Context(), e, body, call, &run)
+		}
+		if call.clientTools {
+			// Claude Code runs the other tools; the answer reaches the executor as guidance next time.
+			cw.release()
+			break
+		}
+		next, err := guided.AppendConsultAnswer(body, call.text, call.question, answer)
+		if err != nil {
+			cw.fail("cannot continue after the director's answer: " + err.Error())
+			leg.Status, leg.Error = ledger.StatusError, err.Error()
+			break
+		}
+		body = next
+		note = run.note + "; continued after the director's answer"
+		cw.continueSegment()
+	}
+	e.Finish(leg.Status, leg.HTTPStatus, leg.Error)
+}
+
+// answerQuestion asks the director an executor's question and keeps the answer
+// as guidance for the rest of the turn.
+func (s *Server) answerQuestion(ctx context.Context, e *ledger.Entry, body []byte, call consultCall, run *consultRun) string {
+	run.state.DirectorCalls++
+	defer func() { s.guidedTurns.Put(run.key, run.state) }()
+	transcript := body
+	if call.text != "" {
+		if withText, err := guided.AppendAssistantText(body, call.text); err == nil {
+			transcript = withText
+		}
+	}
+	dec := guided.Decision{Reason: guided.ReasonQuestion, Detail: call.question}
+	guidance, _, leg := s.consultDirector(ctx, run.director, transcript, run.settings.Director, dec, run.state.Guidance)
+	leg.Role = ledger.RoleDirector
+	leg.Note = joinNote("question: "+clip(call.question, 300), leg.Note)
+	e.Legs = append(e.Legs, leg)
+	if leg.Status != ledger.StatusOK {
+		return answerUnavailable
+	}
+	run.state.Guidance, run.state.GuidanceReason = guidance, guided.ReasonQuestion
+	return guidance
 }
 
 // consultDirector asks the director for guidance. A failed call leaves the

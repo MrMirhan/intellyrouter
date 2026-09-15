@@ -17,6 +17,8 @@ type Settings struct {
 	// EscalateAfter is the number of failure checkpoints in one turn after
 	// which the executor moves up one tier. Zero keeps the base tier.
 	EscalateAfter int `json:"escalate_after"`
+	// Consult gives the executor the ask_director tool, which the gateway answers.
+	Consult bool `json:"consult"`
 }
 
 type DirectorSettings struct {
@@ -42,6 +44,7 @@ const (
 	ReasonUnsure    = "executor is unsure"
 	ReasonReview    = "review after passing tests"
 	ReasonSteps     = "step budget"
+	ReasonQuestion  = "executor question"
 )
 
 var efforts = []string{"", "low", "medium", "high", "xhigh", "max"}
@@ -50,6 +53,7 @@ func DefaultSettings() Settings {
 	return Settings{
 		Director:      DirectorSettings{Effort: "medium", MaxCallsPerTurn: 6},
 		Checkpoints:   Checkpoints{TurnStart: true, FailedResults: 2, Steps: 15, Unsure: true, ReviewOnSuccess: true},
+		Consult:       true,
 		EscalateAfter: 2,
 	}
 }

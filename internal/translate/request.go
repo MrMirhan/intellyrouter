@@ -14,6 +14,9 @@ type Options struct {
 	Model string
 	// MaxTokensField is "max_tokens" or "max_completion_tokens".
 	MaxTokensField string
+	// ThoughtSignature returns the recorded Gemini thought signature of a tool
+	// call. When it is set, every replayed tool call carries a signature.
+	ThoughtSignature func(toolUseID string) string
 }
 
 type anthropicRequest struct {
@@ -113,15 +116,34 @@ type openAIFunction struct {
 }
 
 type openAIToolCall struct {
-	ID       string             `json:"id"`
-	Type     string             `json:"type"`
-	Function openAICallFunction `json:"function"`
+	ID           string             `json:"id"`
+	Type         string             `json:"type"`
+	Function     openAICallFunction `json:"function"`
+	ExtraContent *extraContent      `json:"extra_content,omitempty"`
 }
 
 type openAICallFunction struct {
 	Name      string `json:"name"`
 	Arguments string `json:"arguments"`
 }
+
+// extraContent carries provider fields; Gemini puts thought signatures here.
+type extraContent struct {
+	Google struct {
+		ThoughtSignature string `json:"thought_signature,omitempty"`
+	} `json:"google"`
+}
+
+func (e *extraContent) signature() string {
+	if e == nil {
+		return ""
+	}
+	return e.Google.ThoughtSignature
+}
+
+// SkipThoughtSignature is Gemini's value for a function call without a
+// recorded signature, such as a call that another model wrote.
+const SkipThoughtSignature = "skip_thought_signature_validator"
 
 // Request converts an Anthropic Messages request body into a Chat Completions
 // request body. Thinking blocks, cache_control, and server tools have no
@@ -150,7 +172,7 @@ func Request(body []byte, opts Options) ([]byte, error) {
 		out.Messages = append(out.Messages, openAIMessage{Role: "system", Content: system})
 	}
 	for i, m := range in.Messages {
-		msgs, err := convertMessage(m)
+		msgs, err := convertMessage(m, opts.ThoughtSignature)
 		if err != nil {
 			return nil, fmt.Errorf("messages[%d]: %w", i, err)
 		}
@@ -221,7 +243,7 @@ func parseContent(raw json.RawMessage) ([]contentBlock, string, error) {
 	return blocks, "", nil
 }
 
-func convertMessage(m anthropicMessage) ([]openAIMessage, error) {
+func convertMessage(m anthropicMessage, signature func(string) string) ([]openAIMessage, error) {
 	blocks, text, err := parseContent(m.Content)
 	if err != nil {
 		return nil, err
@@ -231,7 +253,7 @@ func convertMessage(m anthropicMessage) ([]openAIMessage, error) {
 		if blocks == nil {
 			return []openAIMessage{{Role: "assistant", Content: text}}, nil
 		}
-		return []openAIMessage{assistantMessage(blocks)}, nil
+		return []openAIMessage{assistantMessage(blocks, signature)}, nil
 	case "user", "system":
 		if blocks == nil {
 			return []openAIMessage{{Role: m.Role, Content: text}}, nil
@@ -241,7 +263,7 @@ func convertMessage(m anthropicMessage) ([]openAIMessage, error) {
 	return nil, fmt.Errorf("unsupported role %q", m.Role)
 }
 
-func assistantMessage(blocks []contentBlock) openAIMessage {
+func assistantMessage(blocks []contentBlock, signature func(string) string) openAIMessage {
 	msg := openAIMessage{Role: "assistant"}
 	var text []string
 	for _, b := range blocks {
@@ -253,9 +275,17 @@ func assistantMessage(blocks []contentBlock) openAIMessage {
 			if args == "" || args == "null" {
 				args = "{}"
 			}
-			msg.ToolCalls = append(msg.ToolCalls, openAIToolCall{
+			call := openAIToolCall{
 				ID: b.ID, Type: "function", Function: openAICallFunction{Name: b.Name, Arguments: args},
-			})
+			}
+			if signature != nil {
+				call.ExtraContent = &extraContent{}
+				call.ExtraContent.Google.ThoughtSignature = signature(b.ID)
+				if call.ExtraContent.Google.ThoughtSignature == "" {
+					call.ExtraContent.Google.ThoughtSignature = SkipThoughtSignature
+				}
+			}
+			msg.ToolCalls = append(msg.ToolCalls, call)
 		}
 	}
 	if len(text) > 0 || len(msg.ToolCalls) == 0 {

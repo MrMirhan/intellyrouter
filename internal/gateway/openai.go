@@ -29,7 +29,11 @@ func (s *Server) forwardOpenAI(w http.ResponseWriter, r *http.Request, t target,
 		return leg
 	}
 
-	upBody, err := translate.Request(body, translate.Options{Model: t.model.ModelID, MaxTokensField: t.config.Type.MaxTokensField()})
+	opts := translate.Options{Model: t.model.ModelID, MaxTokensField: t.config.Type.MaxTokensField()}
+	if needsThoughtSignatures(t) {
+		opts.ThoughtSignature = s.signatures.get
+	}
+	upBody, err := translate.Request(body, opts)
 	if err != nil {
 		msg := "cannot translate request: " + err.Error()
 		writeError(w, http.StatusBadRequest, "invalid_request_error", msg)
@@ -70,6 +74,7 @@ func (s *Server) forwardOpenAI(w http.ResponseWriter, r *http.Request, t target,
 		var out []byte
 		if err == nil {
 			out, err = translate.Response(raw, t.model.ModelID)
+			s.signatures.put(translate.ThoughtSignatures(raw))
 		}
 		if err != nil {
 			msg := "cannot translate upstream response: " + err.Error()
@@ -94,6 +99,7 @@ func (s *Server) forwardOpenAI(w http.ResponseWriter, r *http.Request, t target,
 	})
 	err = translateStream(resp.Body, ts)
 	stopPings()
+	s.signatures.put(ts.ThoughtSignatures())
 	leg.Usage, leg.StopReason = tr.Usage, tr.StopReason
 
 	var upErr *translate.UpstreamError

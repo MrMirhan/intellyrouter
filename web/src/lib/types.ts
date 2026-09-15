@@ -90,6 +90,7 @@ export interface GuidedSettings {
     review_on_success: boolean
   }
   escalate_after: number
+  consult: boolean
 }
 
 export interface Route {

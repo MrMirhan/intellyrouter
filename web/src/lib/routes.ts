@@ -9,6 +9,7 @@ export const defaultGuidedSettings: GuidedSettings = {
   director: { model_id: 0, effort: "medium", max_calls_per_turn: 6 },
   checkpoints: { turn_start: true, failed_results: 2, steps: 15, unsure: true, review_on_success: true },
   escalate_after: 2,
+  consult: true,
 }
 
 export const labelPattern = /^[a-z0-9._-]+$/
@@ -33,5 +34,6 @@ export function guidedSettings(route: Route): GuidedSettings {
     director: { ...defaultGuidedSettings.director, ...route.settings.director },
     checkpoints: { ...defaultGuidedSettings.checkpoints, ...route.settings.checkpoints },
     escalate_after: route.settings.escalate_after ?? defaultGuidedSettings.escalate_after,
+    consult: route.settings.consult ?? defaultGuidedSettings.consult,
   }
 }

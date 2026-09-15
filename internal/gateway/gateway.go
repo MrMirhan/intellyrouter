@@ -22,6 +22,7 @@ type Server struct {
 	decider     *escalate.Decider
 	compat      *compat
 	guidedTurns *guided.Tracker
+	signatures  *signatureCache
 }
 
 // A turn decision outlives any realistic tool loop.
@@ -30,7 +31,7 @@ const turnTTL = 6 * time.Hour
 func New(st *store.Store, rec *ledger.Recorder, client *http.Client, log *slog.Logger) *Server {
 	return &Server{
 		store: st, ledger: rec, client: client, log: log,
-		decider: escalate.NewDecider(turnTTL), compat: newCompat(), guidedTurns: guided.NewTracker(turnTTL),
+		decider: escalate.NewDecider(turnTTL), compat: newCompat(), guidedTurns: guided.NewTracker(turnTTL), signatures: newSignatureCache(turnTTL),
 	}
 }
 

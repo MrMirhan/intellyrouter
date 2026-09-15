@@ -60,6 +60,9 @@ func DirectorRequest(body []byte, model string, ds DirectorSettings, reason, det
 	if detail != "" {
 		checkpoint += " (" + detail + ")"
 	}
+	if reason == ReasonQuestion {
+		checkpoint = "The executor asks you:\n" + detail + "\n\nAnswer the question directly, then add the guidance the executor needs."
+	}
 	if previous != "" {
 		checkpoint += "\n\nYour previous guidance in this turn:\n" + previous
 	}

@@ -221,3 +221,19 @@ func errorType(status int) string {
 	}
 	return "invalid_request_error"
 }
+
+// ThoughtSignatures returns the Gemini thought signatures of a Chat Completions
+// response by the tool_use IDs that Response gives the tool calls.
+func ThoughtSignatures(body []byte) map[string]string {
+	var in openAIResponse
+	out := make(map[string]string)
+	if json.Unmarshal(body, &in) != nil || len(in.Choices) == 0 {
+		return out
+	}
+	for _, tc := range in.Choices[0].Message.ToolCalls {
+		if sig := tc.ExtraContent.signature(); sig != "" && tc.ID != "" {
+			out[toolID(tc.ID)] = sig
+		}
+	}
+	return out
+}

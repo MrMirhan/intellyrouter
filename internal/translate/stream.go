@@ -26,6 +26,9 @@ type pendingTool struct {
 	id   string
 	name string
 	args strings.Builder
+	// outID is the tool_use ID sent to the client.
+	outID     string
+	signature string
 }
 
 // UpstreamError reports an error chunk inside an otherwise successful stream.
@@ -45,9 +48,10 @@ type chunk struct {
 		Delta struct {
 			Content   *string `json:"content"`
 			ToolCalls []struct {
-				Index    int    `json:"index"`
-				ID       string `json:"id"`
-				Function struct {
+				Index        int           `json:"index"`
+				ID           string        `json:"id"`
+				ExtraContent *extraContent `json:"extra_content"`
+				Function     struct {
 					Name      string `json:"name"`
 					Arguments string `json:"arguments"`
 				} `json:"function"`
@@ -136,6 +140,9 @@ func (s *Stream) Chunk(data []byte) error {
 				p.name = tc.Function.Name
 			}
 			p.args.WriteString(tc.Function.Arguments)
+			if sig := tc.ExtraContent.signature(); sig != "" {
+				p.signature = sig
+			}
 		}
 		if ch.FinishReason != nil && *ch.FinishReason != "" {
 			s.finish = *ch.FinishReason
@@ -154,8 +161,9 @@ func (s *Stream) Finish() error {
 		return err
 	}
 	for _, p := range s.tools {
+		p.outID = toolID(p.id)
 		start := blockStart{Type: "content_block_start", Index: s.index,
-			ContentBlock: outBlock{Type: "tool_use", ID: toolID(p.id), Name: p.name, Input: json.RawMessage(`{}`)}}
+			ContentBlock: outBlock{Type: "tool_use", ID: p.outID, Name: p.name, Input: json.RawMessage(`{}`)}}
 		if err := s.event("content_block_start", start); err != nil {
 			return err
 		}
@@ -220,4 +228,16 @@ func (s *Stream) event(name string, v any) error {
 		return err
 	}
 	return s.emit(name, b)
+}
+
+// ThoughtSignatures returns the Gemini thought signatures of the emitted tool
+// calls by tool_use ID. Call it after Finish.
+func (s *Stream) ThoughtSignatures() map[string]string {
+	out := make(map[string]string)
+	for _, p := range s.tools {
+		if p.signature != "" && p.outID != "" {
+			out[p.outID] = p.signature
+		}
+	}
+	return out
 }

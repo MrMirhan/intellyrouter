@@ -26,6 +26,8 @@ type guidedCall struct {
 	director    bool
 	guidance    bool
 	stream      bool
+	consult     bool // the executor request offers ask_director
+	answered    bool // the executor request carries the director's answer
 }
 
 // setupGuided builds a guided route: DeepSeek flash and pro as executor tiers
@@ -33,6 +35,10 @@ type guidedCall struct {
 func setupGuided(t *testing.T, directorType provider.Type) (env, func() []guidedCall) {
 	t.Helper()
 	fixture, err := os.ReadFile("../../testdata/anthropic/stream_tool_use.sse")
+	must(t, err)
+	askFixture, err := os.ReadFile("../../testdata/anthropic/stream_ask_director.sse")
+	must(t, err)
+	afterAnswer, err := os.ReadFile("../../testdata/anthropic/stream_after_answer.sse")
 	must(t, err)
 	var mu sync.Mutex
 	var calls []guidedCall
@@ -47,6 +53,8 @@ func setupGuided(t *testing.T, directorType provider.Type) (env, func() []guided
 			model: body.Model, auth: r.Header.Get("Authorization"), stream: body.Stream,
 			director: bytes.Contains(raw, []byte("You direct a coding agent")),
 			guidance: bytes.Contains(raw, []byte("director-guidance")),
+			consult:  bytes.Contains(raw, []byte(`"name":"ask_director"`)),
+			answered: bytes.Contains(raw, []byte("director-answer")),
 		}
 		mu.Lock()
 		calls = append(calls, c)
@@ -61,7 +69,14 @@ func setupGuided(t *testing.T, directorType provider.Type) (env, func() []guided
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write(fixture)
+		switch {
+		case c.answered:
+			_, _ = w.Write(afterAnswer)
+		case bytes.Contains(raw, []byte("ASK_TEST")):
+			_, _ = w.Write(askFixture)
+		default:
+			_, _ = w.Write(fixture)
+		}
 	}))
 	t.Cleanup(up.Close)
 
@@ -101,7 +116,7 @@ func setupGuided(t *testing.T, directorType provider.Type) (env, func() []guided
 	}
 }
 
-func sendGuided(t *testing.T, e env, messages string) {
+func sendGuided(t *testing.T, e env, messages string) []byte {
 	t.Helper()
 	body := `{"model":"claude-guided","max_tokens":1024,"stream":true,"tools":[{"name":"Bash","input_schema":{"type":"object"}}],"messages":[` + messages + `]}`
 	resp, out := send(t, http.MethodPost, e.url+"/v1/messages", body, map[string]string{
@@ -110,6 +125,7 @@ func sendGuided(t *testing.T, e env, messages string) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status %d: %s", resp.StatusCode, out)
 	}
+	return out
 }
 
 const (
@@ -135,12 +151,12 @@ func TestGuidedDirectorSteersExecutors(t *testing.T) {
 	want := []guidedCall{
 		{model: "deepseek-v4-flash", auth: "Bearer sk-deepseek", stream: true},
 		{model: "claude-fable-5-1", director: true},
-		{model: "deepseek-v4-flash", auth: "Bearer sk-deepseek", guidance: true, stream: true},
-		{model: "deepseek-v4-flash", auth: "Bearer sk-deepseek", guidance: true, stream: true},
+		{model: "deepseek-v4-flash", auth: "Bearer sk-deepseek", guidance: true, stream: true, consult: true},
+		{model: "deepseek-v4-flash", auth: "Bearer sk-deepseek", guidance: true, stream: true, consult: true},
 		{model: "claude-fable-5-1", director: true},
-		{model: "deepseek-v4-flash", auth: "Bearer sk-deepseek", guidance: true, stream: true},
+		{model: "deepseek-v4-flash", auth: "Bearer sk-deepseek", guidance: true, stream: true, consult: true},
 		{model: "claude-fable-5-1", director: true},
-		{model: "deepseek-v4-pro", auth: "Bearer sk-deepseek", guidance: true, stream: true},
+		{model: "deepseek-v4-pro", auth: "Bearer sk-deepseek", guidance: true, stream: true, consult: true},
 	}
 	got := calls()
 	// The API director uses the provider key; the Claude login never reaches it.
@@ -176,5 +192,35 @@ func TestGuidedSubscriptionDirectorTakesTheStep(t *testing.T) {
 	legs := requestLegs(t, e.store)
 	if legs[0][0].Role != ledger.RoleDirector || legs[0][0].Billing != ledger.BillingSubscription || !strings.Contains(legs[0][0].Note, "director step: turn start") {
 		t.Fatalf("director leg = %+v", legs[0][0])
+	}
+}
+
+func TestGuidedExecutorAsksDirector(t *testing.T) {
+	e, calls := setupGuided(t, provider.Anthropic)
+	out := string(sendGuided(t, e, `{"role":"user","content":"ASK_TEST fix calc"}`))
+
+	want := []guidedCall{
+		{model: "claude-fable-5-1", director: true},
+		{model: "deepseek-v4-flash", auth: "Bearer sk-deepseek", guidance: true, stream: true, consult: true},
+		{model: "claude-fable-5-1", director: true, guidance: true},
+		{model: "deepseek-v4-flash", auth: "Bearer sk-deepseek", guidance: true, stream: true, consult: true, answered: true},
+	}
+	if got := calls(); !slices.Equal(got, want) {
+		t.Fatalf("upstream calls:\n got %+v\nwant %+v", got, want)
+	}
+	switch {
+	case strings.Contains(out, "ask_director"):
+		t.Fatalf("the hidden question reached Claude Code:\n%s", out)
+	case strings.Count(out, "event: message_start") != 1 || strings.Count(out, "event: message_stop") != 1:
+		t.Fatalf("client stream is not one message:\n%s", out)
+	case !strings.Contains(out, "Checking the code.") || !strings.Contains(out, "calc.go has the bug.") || !strings.Contains(out, `"stop_reason":"end_turn"`):
+		t.Fatalf("client stream misses the continuation:\n%s", out)
+	}
+
+	legs := requestLegs(t, e.store)
+	if len(legs) != 1 || len(legs[0]) != 4 || legs[0][2].Role != ledger.RoleDirector ||
+		!strings.Contains(legs[0][2].Note, "question: Which file has the bug?") ||
+		!strings.Contains(legs[0][3].Note, "continued after the director's answer") {
+		t.Fatalf("legs = %+v", legs)
 	}
 }

@@ -134,7 +134,8 @@ Only one checkpoint occurs for each executor step. The route settings:
 {
   "director": { "model_id": 2, "effort": "medium", "max_calls_per_turn": 6 },
   "checkpoints": { "turn_start": true, "failed_results": 2, "steps": 15, "unsure": true, "review_on_success": true },
-  "escalate_after": 2
+  "escalate_after": 2,
+  "consult": true
 }
 ```
 
@@ -144,6 +145,14 @@ Only one checkpoint occurs for each executor step. The route settings:
 - If a director call fails, the executor continues with the previous guidance.
 - A director on an `anthropic-subscription` provider: the gateway cannot call it on its own. At a checkpoint, the gateway sends Claude Code's request to the director, so the director does that step itself. The executors get no written guidance.
 - An executor on an `anthropic-subscription` provider gets no guidance, because the gateway changes only the model name in subscription requests.
+
+### Questions from the executor
+
+With `"consult": true` (the default), the executor gets one more tool, `ask_director`. When the executor calls it, the gateway sends the question and the session to the director, adds the answer to the executor's request, and continues the executor's response. Claude Code receives one message and does not see the question or the answer. The gateway sends pings while the director works.
+
+- This works only for streaming requests, with a director and an executor that use API keys.
+- A question uses one director call of `max_calls_per_turn`. One request can have at most 3 questions.
+- If the executor calls `ask_director` together with other tools, Claude Code runs the other tools. The answer goes to the executor as guidance in the next request.
 
 ## Costs and savings
 
