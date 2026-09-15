@@ -31,7 +31,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { ConnectDialog } from "@/features/routes/connect-dialog"
 import { RouteSheet } from "@/features/routes/route-sheet"
 import { useDeleteRoute, useModels, useProviders, useRoutes } from "@/lib/queries"
-import { escalateSettings } from "@/lib/routes"
+import { escalateSettings, guidedSettings } from "@/lib/routes"
 import type { Model, Provider, Route } from "@/lib/types"
 
 function targetText(target: string) {
@@ -55,6 +55,7 @@ function RouteCard({
   const escalate = route.strategy === "escalate"
   const settings = escalateSettings(route)
   const modelName = (id: number) => modelById.get(id)?.model_id ?? `model ${id}`
+  const guided = route.strategy === "guided" ? guidedSettings(route) : null
 
   const rules = [
     settings.classifier.enabled &&
@@ -98,7 +99,8 @@ function RouteCard({
           </ol>
           <p className="text-xs text-muted-foreground">
             {escalate && (rules.length > 0 ? rules.join(" · ") : "Markers only")}
-            {escalate && " · "}
+            {guided && `Director ${modelName(guided.director.model_id)}`}
+            {(escalate || guided) && " · "}
             Created <RelativeTime ms={route.created_at} />
           </p>
         </div>

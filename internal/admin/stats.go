@@ -33,6 +33,7 @@ type statsTotalsJSON struct {
 	APITokens            int64   `json:"api_tokens"`
 	SubscriptionTokens   int64   `json:"subscription_tokens"`
 	ClassifierCostUSD    float64 `json:"classifier_cost_usd"`
+	DirectorCostUSD      float64 `json:"director_cost_usd"`
 }
 
 type statsPointJSON struct {
@@ -104,6 +105,7 @@ func toStatsJSON(name string, since, bucket int64, st store.Stats) statsJSON {
 			CostUSD: t.CostUSD, SubscriptionValueUSD: t.SubscriptionValueUSD, ReferenceCostUSD: t.ReferenceCostUSD, SavingsUSD: t.SavingsUSD,
 			InputTokens: t.InputTokens, OutputTokens: t.OutputTokens, CacheReadTokens: t.CacheReadTokens, CacheWriteTokens: t.CacheWriteTokens,
 			APITokens: t.APITokens, SubscriptionTokens: t.SubscriptionTokens, ClassifierCostUSD: t.ClassifierCostUSD,
+			DirectorCostUSD: t.DirectorCostUSD,
 		},
 		Series:  make([]statsPointJSON, 0, len(st.Series)),
 		ByRoute: make([]routeStatsJSON, 0, len(st.ByRoute)),

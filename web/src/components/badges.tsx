@@ -1,4 +1,4 @@
-import { ArrowUpRightIcon, CrownIcon, LoaderCircleIcon } from "lucide-react"
+import { ArrowUpRightIcon, CompassIcon, CrownIcon, LoaderCircleIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { providerTypes } from "@/lib/providers"
@@ -47,6 +47,14 @@ export function StrategyBadge({ strategy }: { strategy: string }) {
       </Badge>
     )
   }
+  if (strategy === "guided") {
+    return (
+      <Badge variant="secondary">
+        <CompassIcon />
+        Guided
+      </Badge>
+    )
+  }
   if (strategy === "direct") {
     return <Badge variant="outline">Direct</Badge>
   }
@@ -55,13 +63,15 @@ export function StrategyBadge({ strategy }: { strategy: string }) {
 
 const roleLabels: Record<LegRole, string> = {
   direct: "Direct",
-  executor: "Base tier",
+  executor: "Executor",
   escalation: "Escalation",
   classifier: "Classifier",
+  director: "Director",
 }
 
 export function RoleBadge({ role }: { role: LegRole }) {
-  const variant = role === "escalation" ? "default" : role === "classifier" ? "secondary" : "outline"
+  const variant =
+    role === "escalation" || role === "director" ? "default" : role === "classifier" ? "secondary" : "outline"
   return <Badge variant={variant}>{roleLabels[role] ?? role}</Badge>
 }
 

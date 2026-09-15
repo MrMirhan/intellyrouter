@@ -13,6 +13,7 @@ const (
 	RoleExecutor   = "executor"
 	RoleEscalation = "escalation"
 	RoleClassifier = "classifier"
+	RoleDirector   = "director"
 )
 
 const (

@@ -30,6 +30,13 @@ func TestStats(t *testing.T) {
 				{Seq: 1, Role: "executor", Provider: "deepseek", Model: "flash", Billing: "api", InputTokens: 200, OutputTokens: 20, CostUSD: 0.003, Status: "upstream_error"},
 			},
 		},
+		{
+			TS: hour + 3, Route: "guided", Strategy: StrategyGuided, Status: "ok", CostUSD: 0.012, ReferenceCostUSD: 0.1,
+			Legs: []Leg{
+				{Role: "director", Provider: "anthropic", Model: "sonnet", Billing: "api", InputTokens: 300, OutputTokens: 30, CostUSD: 0.01, Status: "ok"},
+				{Seq: 1, Role: "executor", Provider: "deepseek", Model: "flash", Billing: "api", InputTokens: 400, OutputTokens: 40, CostUSD: 0.002, Status: "ok"},
+			},
+		},
 	}
 	for _, r := range requests {
 		if _, err := s.InsertRequest(ctx, r); err != nil {
@@ -46,10 +53,10 @@ func TestStats(t *testing.T) {
 		name      string
 		got, want int64
 	}{
-		{"requests", tot.Requests, 4}, {"errors", tot.Errors, 1},
+		{"requests", tot.Requests, 5}, {"errors", tot.Errors, 1},
 		{"escalate requests", tot.EscalateRequests, 2}, {"escalated requests", tot.EscalatedRequests, 1},
-		{"input tokens", tot.InputTokens, 1360}, {"output tokens", tot.OutputTokens, 141}, {"cache read", tot.CacheReadTokens, 500},
-		{"api tokens", tot.APITokens, 330}, {"subscription tokens", tot.SubscriptionTokens, 1600},
+		{"input tokens", tot.InputTokens, 2060}, {"output tokens", tot.OutputTokens, 211}, {"cache read", tot.CacheReadTokens, 500},
+		{"api tokens", tot.APITokens, 770}, {"subscription tokens", tot.SubscriptionTokens, 1600},
 	}
 	for _, c := range ints {
 		if c.got != c.want {
@@ -60,8 +67,9 @@ func TestStats(t *testing.T) {
 		name      string
 		got, want float64
 	}{
-		{"cost", tot.CostUSD, 0.016}, {"subscription value", tot.SubscriptionValueUSD, 0.3},
-		{"reference", tot.ReferenceCostUSD, 0.07}, {"savings", tot.SavingsUSD, 0.056}, {"classifier cost", tot.ClassifierCostUSD, 0.003},
+		{"cost", tot.CostUSD, 0.028}, {"subscription value", tot.SubscriptionValueUSD, 0.3},
+		{"reference", tot.ReferenceCostUSD, 0.17}, {"savings", tot.SavingsUSD, 0.144},
+		{"classifier cost", tot.ClassifierCostUSD, 0.003}, {"director cost", tot.DirectorCostUSD, 0.01},
 	}
 	for _, c := range floats {
 		if math.Abs(c.got-c.want) > 1e-9 {
@@ -70,13 +78,13 @@ func TestStats(t *testing.T) {
 	}
 
 	if len(st.Series) != 2 || st.Series[0].TS != 0 || st.Series[0].Requests != 2 || st.Series[0].APITokens != 110 ||
-		st.Series[1].TS != hour || st.Series[1].Requests != 2 || st.Series[1].APITokens != 220 || st.Series[1].SubscriptionTokens != 1600 {
+		st.Series[1].TS != hour || st.Series[1].Requests != 3 || st.Series[1].APITokens != 660 || st.Series[1].SubscriptionTokens != 1600 {
 		t.Errorf("series = %+v", st.Series)
 	}
-	if len(st.ByRoute) != 2 || st.ByRoute[0].Route != "auto" || st.ByRoute[0].Requests != 2 {
+	if len(st.ByRoute) != 3 || st.ByRoute[0].Route != "auto" || st.ByRoute[0].Requests != 2 {
 		t.Errorf("by route = %+v", st.ByRoute)
 	}
-	if len(st.ByModel) != 2 || st.ByModel[0].Model != "flash" || st.ByModel[0].Calls != 4 || st.ByModel[1].Billing != "subscription" {
+	if len(st.ByModel) != 3 || st.ByModel[0].Model != "flash" || st.ByModel[0].Calls != 5 || st.ByModel[1].Billing != "subscription" {
 		t.Errorf("by model = %+v", st.ByModel)
 	}
 

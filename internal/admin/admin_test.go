@@ -180,6 +180,16 @@ func TestProviderModelRouteFlow(t *testing.T) {
 	}
 	c.do("POST", "/api/admin/routes", escalateRoute("sub-classifier", subOpus), http.StatusBadRequest)
 	c.do("POST", "/api/admin/routes", escalateRoute("haiku-classifier", haiku.ID), http.StatusCreated)
+
+	// A subscription director is allowed: it takes the checkpoint step itself.
+	guidedRoute := func(name string, settings map[string]any) map[string]any {
+		return map[string]any{"name": name, "strategy": "guided", "tiers": []map[string]any{{"model_id": haiku.ID}}, "settings": settings}
+	}
+	c.do("POST", "/api/admin/routes", guidedRoute("guided-none", map[string]any{}), http.StatusBadRequest)
+	c.do("POST", "/api/admin/routes", guidedRoute("guided-missing", map[string]any{"director": map[string]any{"model_id": 99999}}), http.StatusBadRequest)
+	c.do("POST", "/api/admin/routes", guidedRoute("guided-effort", map[string]any{"director": map[string]any{"model_id": subOpus, "effort": "turbo"}}), http.StatusBadRequest)
+	c.do("POST", "/api/admin/routes", guidedRoute("guided-sub", map[string]any{"director": map[string]any{"model_id": subOpus}}), http.StatusCreated)
+	c.do("POST", "/api/admin/routes", map[string]any{"name": "guided-empty", "strategy": "guided", "tiers": []map[string]any{}, "settings": map[string]any{"director": map[string]any{"model_id": subOpus}}}, http.StatusBadRequest)
 }
 
 func TestMutationsRequireJSON(t *testing.T) {

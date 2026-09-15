@@ -1,6 +1,6 @@
 # IntellyRouter
 
-IntellyRouter is a local gateway for Claude Code. Low-cost models do most of the work. A stronger Claude model takes a turn when you ask for it, when a small classifier finds that you are not satisfied, or when the work fails several times in a row. The gateway records every upstream call, so the dashboard shows what each request cost and how much you saved.
+IntellyRouter is a local gateway for Claude Code. Low-cost models do most of the work. A stronger Claude model directs them at checkpoints, or takes a turn when you ask for it, when a small classifier finds that you are not satisfied, or when the work fails several times in a row. The gateway records every upstream call, so the dashboard shows what each request cost and how much you saved.
 
 ## How it works
 
@@ -11,8 +11,9 @@ Claude Code sends Anthropic Messages API requests to the gateway. The model name
   - A marker in your prompt: `#<label>`, `#up`, or `#base`.
   - The classifier: a small model reads your latest message once per turn. It escalates when you reject the previous result, ask for a review, or ask for a stronger model.
   - A failure streak: a number of failed tool calls in a row.
+- `guided` sends every request to a low-cost executor model. A director model, for example Claude Fable 5.1, reads the session at checkpoints and tells the executor what to do next. See [Guided routes](#guided-routes).
 
-All requests of one turn (the tool loop after one prompt) go to the same tier.
+On an escalate route, all requests of one turn (the tool loop after one prompt) go to the same tier.
 
 The gateway supports these provider types:
 
@@ -29,7 +30,7 @@ The gateway supports these provider types:
 
 The gateway never asks for your Claude login and never stores it. Claude Code signs in with `/login` as usual. On a route tier that uses an `anthropic-subscription` provider, the gateway sends Claude Code's own request to Anthropic, changes only the model name, and keeps the `Authorization` header. For all other providers, the gateway removes that header.
 
-Calls that the gateway starts itself, such as the classifier, never use the subscription. Anthropic does not permit third-party tools to collect or reuse Claude.ai credentials, so do not change this behavior.
+Calls that the gateway starts itself, such as the classifier and director checkpoints, never use the subscription. Anthropic does not permit third-party tools to collect or reuse Claude.ai credentials, so do not change this behavior.
 
 ## Requirements
 
@@ -113,11 +114,42 @@ An escalate route stores its rules in the route settings:
 
 An escalated turn sends the full conversation to the Claude model. That model has no cache for the turns that a different model served, so the turn uses more of your plan limit than a normal Claude turn. Escalate when the result matters.
 
+## Guided routes
+
+On a guided route, low-cost executor models read files, run commands, and write the code. A stronger director model steers them and does not write the final output. Claude Code does not see this process.
+
+At a checkpoint, the gateway sends the director a text copy of the session: the prompts, the assistant text, the tool calls, and shortened tool results. Thinking blocks are not sent. The director replies with short guidance. The gateway adds the guidance to the last user message of the executor request, and keeps it for the next requests of the same turn.
+
+| Checkpoint | When it occurs |
+| --- | --- |
+| `turn_start` | You send a new prompt. |
+| `failed_results` | The session has this number of new failed tool results since the last check. |
+| `unsure` | The executor writes that it is stuck or not sure. |
+| `review_on_success` | Files changed and the latest tool results pass. The director approves the work or lists what to fix. |
+| `steps` | The executor made this number of steps since the last check. |
+
+Only one checkpoint occurs for each executor step. The route settings:
+
+```json
+{
+  "director": { "model_id": 2, "effort": "medium", "max_calls_per_turn": 6 },
+  "checkpoints": { "turn_start": true, "failed_results": 2, "steps": 15, "unsure": true, "review_on_success": true },
+  "escalate_after": 2
+}
+```
+
+- A count of 0 turns that checkpoint off.
+- `max_calls_per_turn` limits the director calls for one prompt and its tool loop.
+- `escalate_after`: after this number of failure checkpoints in one turn, the next requests go to the next executor. 0 keeps the first executor.
+- If a director call fails, the executor continues with the previous guidance.
+- A director on an `anthropic-subscription` provider: the gateway cannot call it on its own. At a checkpoint, the gateway sends Claude Code's request to the director, so the director does that step itself. The executors get no written guidance.
+- An executor on an `anthropic-subscription` provider gets no guidance, because the gateway changes only the model name in subscription requests.
+
 ## Costs and savings
 
 - **API spend**: the cost of all calls that your providers bill.
 - **Subscription value**: Claude subscription usage at API prices. It costs you nothing extra, but it uses your plan limits. The dashboard also shows the latest rate-limit headers from Anthropic.
-- **Estimated savings**: the cost of the base-tier tokens at the price of the route's top model (or the reference model for direct routes), minus the API spend. Different models use different numbers of tokens and turns, so this value is an estimate. Use the eval runner for a measured comparison.
+- **Estimated savings**: the cost of the base-tier tokens at the price of the route's top model (the director model for guided routes, or the reference model for direct routes), minus the API spend. Classifier and director calls show as routing overhead. Different models use different numbers of tokens and turns, so this value is an estimate. Use the eval runner for a measured comparison.
 
 ## Eval
 

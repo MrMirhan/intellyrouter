@@ -20,6 +20,8 @@ type Turn struct {
 	PreviousReply string
 	// ErrorStreak counts consecutive failed tool results at the end of the conversation.
 	ErrorStreak int
+	// PromptIndex is the position of the prompt in messages, or -1 without one.
+	PromptIndex int
 }
 
 type message struct {
@@ -63,6 +65,7 @@ func Analyze(body []byte) (Turn, error) {
 		}
 	}
 	t.ErrorStreak = errorStreak(req.Messages[promptAt+1:])
+	t.PromptIndex = promptAt
 	return t, nil
 }
 

@@ -195,11 +195,11 @@ function Kpis({ stats, rangeLabel }: { stats: Stats; rangeLabel: string }) {
           </span>
         </div>
       </Kpi>
-      <Kpi title="Classifier overhead" value={formatUsd(t.classifier_cost_usd)}>
+      <Kpi title="Routing overhead" value={formatUsd(t.director_cost_usd + t.classifier_cost_usd)}>
         <p>
-          {t.cost_usd > 0
-            ? `${formatPercent(t.classifier_cost_usd / t.cost_usd)} of API spend.`
-            : "API cost of classifier calls."}
+          Director {formatUsd(t.director_cost_usd)} · Classifier {formatUsd(t.classifier_cost_usd)}
+          {t.cost_usd > 0 &&
+            ` · ${formatPercent((t.director_cost_usd + t.classifier_cost_usd) / t.cost_usd)} of API spend`}
         </p>
       </Kpi>
       <Kpi title="Tokens processed" value={formatTokens(tokens)}>

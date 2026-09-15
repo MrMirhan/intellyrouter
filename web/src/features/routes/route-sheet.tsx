@@ -31,17 +31,21 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
+import { GuidedSettingsFields } from "@/features/routes/guided-settings"
 import { ModelSelect } from "@/features/routes/model-select"
 import { useCreateRoute, useModels, useProviders, useUpdateRoute } from "@/lib/queries"
 import {
   defaultEscalateSettings,
+  defaultGuidedSettings,
   defaultLabel,
   escalateSettings,
+  guidedSettings,
   labelPattern,
 } from "@/lib/routes"
 import type {
   EscalateSettings,
   EscalationTarget,
+  GuidedSettings,
   Model,
   Provider,
   Route,
@@ -97,6 +101,9 @@ function TargetSelect({
 
 function tierTitle(strategy: Strategy, index: number): string {
   if (strategy === "direct") return "Model"
+  if (strategy === "guided") {
+    return index === 0 ? "Executor 1 · first choice" : `Executor ${index + 1} · after repeated failures`
+  }
   return index === 0 ? "Tier 0 · base model" : `Tier ${index} · escalation`
 }
 
@@ -119,6 +126,9 @@ function RouteForm({ route, onDone }: { route: Route | null; onDone: () => void 
   const [settings, setSettings] = useState<EscalateSettings>(() =>
     route ? escalateSettings(route) : defaultEscalateSettings,
   )
+  const [guided, setGuided] = useState<GuidedSettings>(() =>
+    route ? guidedSettings(route) : defaultGuidedSettings,
+  )
   const [submitted, setSubmitted] = useState(false)
   const nextKey = useRef(tiers.length)
 
@@ -126,6 +136,7 @@ function RouteForm({ route, onDone }: { route: Route | null; onDone: () => void 
   const providerList = providers.data ?? []
   const modelById = new Map(modelList.map((model) => [model.id, model]))
   const escalate = strategy === "escalate"
+  const tiered = strategy !== "direct"
   const pending = createRoute.isPending || updateRoute.isPending
 
   const effectiveLabels = tiers.map((tier) => {
@@ -147,16 +158,18 @@ function RouteForm({ route, onDone }: { route: Route | null; onDone: () => void 
       problems.push(`${tierTitle(strategy, index)}: ${model.model_id} is disabled.`)
     }
     const label = tier.label.trim()
-    if (escalate && label && !labelPattern.test(label)) {
+    if (tiered && label && !labelPattern.test(label)) {
       problems.push(`${tierTitle(strategy, index)}: a label may only contain a-z, 0-9, ".", "_" and "-".`)
     }
   })
-  if (escalate) {
+  if (tiered) {
     const seen = new Set<string>()
     for (const label of effectiveLabels) {
       if (label && seen.has(label)) problems.push(`The label "${label}" is used more than once.`)
       seen.add(label)
     }
+  }
+  if (escalate) {
     const classifierModel = modelById.get(settings.classifier.model_id)
     if (settings.classifier.enabled && !classifierModel) {
       problems.push("Choose a classifier model.")
@@ -167,12 +180,23 @@ function RouteForm({ route, onDone }: { route: Route | null; onDone: () => void 
       problems.push("The failure threshold must be 1 or more.")
     }
   }
+  if (strategy === "guided") {
+    const directorModel = modelById.get(guided.director.model_id)
+    if (!directorModel) {
+      problems.push("Choose a director model.")
+    } else if (!directorModel.enabled) {
+      problems.push(`The director model ${directorModel.model_id} is disabled.`)
+    }
+    if (!(guided.director.max_calls_per_turn >= 1)) {
+      problems.push("Director calls per turn must be 1 or more.")
+    }
+  }
 
   const changeStrategy = (next: Strategy) => {
     setStrategy(next)
     if (next === "direct") {
       setTiers((current) => current.slice(0, 1))
-    } else if (tiers.length < 2) {
+    } else if (next === "escalate" && tiers.length < 2) {
       setTiers((current) => [...current, { key: nextKey.current++, modelId: 0, label: "" }])
     }
   }
@@ -196,7 +220,7 @@ function RouteForm({ route, onDone }: { route: Route | null; onDone: () => void 
       name: name.trim(),
       strategy,
       tiers: tiers.map((tier) => ({ model_id: tier.modelId, label: tier.label.trim() })),
-      settings: escalate ? settings : {},
+      settings: escalate ? settings : strategy === "guided" ? guided : {},
     }
     const onSuccess = (saved: Route) => {
       toast.success(route ? `Saved ${saved.name}` : `Created ${saved.name}`)
@@ -265,12 +289,13 @@ function RouteForm({ route, onDone }: { route: Route | null; onDone: () => void 
                 <Label htmlFor="route-strategy">Strategy</Label>
                 <Select
                   value={strategy}
-                  onValueChange={(next) => changeStrategy(next === "direct" ? "direct" : "escalate")}
+                  onValueChange={(next) => changeStrategy(next === "direct" || next === "guided" ? next : "escalate")}
                 >
                   <SelectTrigger id="route-strategy" className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="guided">Guided</SelectItem>
                     <SelectItem value="escalate">Escalate</SelectItem>
                     <SelectItem value="direct">Direct</SelectItem>
                   </SelectContent>
@@ -290,7 +315,9 @@ function RouteForm({ route, onDone }: { route: Route | null; onDone: () => void 
                 <p className="text-muted-foreground">
                   {escalate
                     ? "Escalate: a cheap base model does the work, and a stronger tier takes over a turn on a marker, a classifier verdict, or repeated tool failures."
-                    : "Direct: every request goes to one model."}
+                    : strategy === "guided"
+                      ? "Guided: low-cost executor models do the work. A director model checks the session at checkpoints and tells the executor what to do next."
+                      : "Direct: every request goes to one model."}
                 </p>
               </div>
             </div>
@@ -298,9 +325,9 @@ function RouteForm({ route, onDone }: { route: Route | null; onDone: () => void 
             <section className="grid gap-3" aria-labelledby="tiers-heading">
               <div className="flex items-center justify-between gap-2">
                 <h3 id="tiers-heading" className="font-medium">
-                  {escalate ? "Tiers" : "Model"}
+                  {strategy === "guided" ? "Executors" : escalate ? "Tiers" : "Model"}
                 </h3>
-                {escalate && (
+                {tiered && (
                   <Button
                     type="button"
                     variant="outline"
@@ -467,6 +494,16 @@ function RouteForm({ route, onDone }: { route: Route | null; onDone: () => void 
               </>
             )}
 
+            {strategy === "guided" && (
+              <GuidedSettingsFields
+                settings={guided}
+                onChange={setGuided}
+                models={modelList}
+                providers={providerList}
+                invalidDirector={submitted && !modelById.get(guided.director.model_id)?.enabled}
+              />
+            )}
+
             {submitted && problems.length > 0 && (
               <Alert variant="destructive">
                 <TriangleAlertIcon />
@@ -530,7 +567,7 @@ function TierRow({
     <li className="grid gap-3 rounded-lg border p-3">
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm font-medium">{title}</span>
-        {strategy === "escalate" && (
+        {strategy !== "direct" && (
           <div className="flex items-center gap-1">
             <Button
               type="button"
@@ -565,7 +602,7 @@ function TierRow({
           </div>
         )}
       </div>
-      <div className={strategy === "escalate" ? "grid gap-3 sm:grid-cols-[1fr_12rem]" : "grid gap-3"}>
+      <div className={strategy !== "direct" ? "grid gap-3 sm:grid-cols-[1fr_12rem]" : "grid gap-3"}>
         <div className="grid gap-2">
           <Label htmlFor={`tier-${tier.key}-model`}>Model</Label>
           <ModelSelect
@@ -577,7 +614,7 @@ function TierRow({
             invalid={invalid}
           />
         </div>
-        {strategy === "escalate" && (
+        {strategy !== "direct" && (
           <div className="grid gap-2">
             <Label htmlFor={`tier-${tier.key}-label`}>Label</Label>
             <Input

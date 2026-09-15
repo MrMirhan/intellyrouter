@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"intellyrouter/internal/escalate"
+	"intellyrouter/internal/guided"
 	"intellyrouter/internal/provider"
 	"intellyrouter/internal/store"
 )
@@ -81,6 +82,10 @@ func (a *API) normalizeRoute(ctx context.Context, r *store.Route) error {
 		if len(r.Tiers) < 2 {
 			return errors.New("an escalate route needs a base model and at least one escalation model")
 		}
+	case store.StrategyGuided:
+		if len(r.Tiers) < 1 {
+			return errors.New("a guided route needs at least one executor model")
+		}
 	default:
 		return fmt.Errorf("unknown strategy %q", r.Strategy)
 	}
@@ -112,10 +117,47 @@ func (a *API) normalizeRoute(ctx context.Context, r *store.Route) error {
 	if err := json.Unmarshal([]byte(r.Settings), &settings); err != nil || settings == nil {
 		return errors.New("settings must be a JSON object")
 	}
-	if r.Strategy == store.StrategyEscalate {
+	switch r.Strategy {
+	case store.StrategyEscalate:
 		return a.validateRules(ctx, r.Settings)
+	case store.StrategyGuided:
+		return a.validateGuided(ctx, r.Settings)
 	}
 	return nil
+}
+
+func (a *API) validateGuided(ctx context.Context, settings string) error {
+	s, err := guided.ParseSettings(settings)
+	if err != nil {
+		return err
+	}
+	m, err := a.store.GetModel(ctx, s.Director.ModelID)
+	if errors.Is(err, store.ErrNotFound) {
+		return fmt.Errorf("director model %d does not exist", s.Director.ModelID)
+	}
+	if err != nil {
+		return err
+	}
+	if !m.Enabled {
+		return fmt.Errorf("director model %s is disabled", m.ModelID)
+	}
+	return nil
+}
+
+// settingsModelID returns the model a route references in its settings: the
+// escalate classifier or the guided director.
+func settingsModelID(rt store.Route) int64 {
+	switch rt.Strategy {
+	case store.StrategyEscalate:
+		if rules, err := escalate.ParseRules(rt.Settings); err == nil && rules.Classifier.Enabled {
+			return rules.Classifier.ModelID
+		}
+	case store.StrategyGuided:
+		if s, err := guided.ParseSettings(rt.Settings); err == nil {
+			return s.Director.ModelID
+		}
+	}
+	return 0
 }
 
 func (a *API) validateRules(ctx context.Context, settings string) error {
@@ -146,7 +188,7 @@ func (a *API) validateRules(ctx context.Context, settings string) error {
 	return nil
 }
 
-// routesUsingModel lists routes that use the model as a tier or as their classifier.
+// routesUsingModel lists routes that use the model as a tier, classifier, or director.
 func (a *API) routesUsingModel(ctx context.Context, modelID int64) ([]string, error) {
 	names, err := a.store.RoutesUsingModel(ctx, modelID)
 	if err != nil {
@@ -157,10 +199,7 @@ func (a *API) routesUsingModel(ctx context.Context, modelID int64) ([]string, er
 		return nil, err
 	}
 	for _, rt := range routes {
-		if rt.Strategy != store.StrategyEscalate || slices.Contains(names, rt.Name) {
-			continue
-		}
-		if rules, err := escalate.ParseRules(rt.Settings); err == nil && rules.Classifier.Enabled && rules.Classifier.ModelID == modelID {
+		if !slices.Contains(names, rt.Name) && settingsModelID(rt) == modelID {
 			names = append(names, rt.Name)
 		}
 	}

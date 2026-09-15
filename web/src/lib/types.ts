@@ -52,7 +52,7 @@ export interface ModelCreate {
 
 export type ModelUpdate = Partial<Omit<ModelCreate, "model_id">>
 
-export type Strategy = "direct" | "escalate"
+export type Strategy = "direct" | "escalate" | "guided"
 
 export type EscalationTarget = "next" | "top"
 
@@ -74,12 +74,30 @@ export interface EscalateSettings {
   }
 }
 
+export type DirectorEffort = "" | "low" | "medium" | "high" | "xhigh" | "max"
+
+export interface GuidedSettings {
+  director: {
+    model_id: number
+    effort: DirectorEffort
+    max_calls_per_turn: number
+  }
+  checkpoints: {
+    turn_start: boolean
+    failed_results: number
+    steps: number
+    unsure: boolean
+    review_on_success: boolean
+  }
+  escalate_after: number
+}
+
 export interface Route {
   id: number
   name: string
   strategy: Strategy
   tiers: Tier[]
-  settings: Partial<EscalateSettings>
+  settings: Partial<EscalateSettings & GuidedSettings>
   created_at: number
 }
 
@@ -87,7 +105,7 @@ export interface RouteInput {
   name: string
   strategy: Strategy
   tiers: Tier[]
-  settings: EscalateSettings | Record<string, never>
+  settings: EscalateSettings | GuidedSettings | Record<string, never>
 }
 
 export interface GatewayKey {
@@ -105,7 +123,7 @@ export interface CreatedGatewayKey extends GatewayKey {
 
 export type RequestStatus = "ok" | "upstream_error" | "error" | "canceled"
 
-export type LegRole = "direct" | "executor" | "escalation" | "classifier"
+export type LegRole = "direct" | "executor" | "escalation" | "classifier" | "director"
 
 export type Billing = "api" | "subscription"
 
@@ -176,6 +194,7 @@ export interface StatsTotals {
   api_tokens: number
   subscription_tokens: number
   classifier_cost_usd: number
+  director_cost_usd: number
 }
 
 export interface StatsPoint {

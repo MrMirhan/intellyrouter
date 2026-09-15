@@ -83,6 +83,8 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		s.direct(w, r, route, cr, &e)
 	case store.StrategyEscalate:
 		s.escalate(w, r, route, cr, &e)
+	case store.StrategyGuided:
+		s.guided(w, r, route, cr, &e)
 	default:
 		writeError(w, http.StatusNotImplemented, "api_error", fmt.Sprintf("strategy %q is not implemented yet", route.Strategy))
 		return

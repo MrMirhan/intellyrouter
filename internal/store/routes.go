@@ -10,6 +10,8 @@ import (
 const (
 	StrategyDirect   = "direct"
 	StrategyEscalate = "escalate"
+	// StrategyGuided lets a director model steer the executor tiers.
+	StrategyGuided = "guided"
 )
 
 // Tier is one model in a route. Label doubles as the #label prompt marker.
