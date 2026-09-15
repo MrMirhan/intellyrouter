@@ -177,6 +177,7 @@ When the executors run on your Claude subscription, the gateway cannot add a too
 ## Costs and savings
 
 - **API spend**: the cost of all calls that your providers bill.
+- **Cache writes**: a one-hour cache write costs two times the input price, and a five-minute cache write uses the model's cache write price. The ledger prices each write by its TTL.
 - **Subscription value**: Claude subscription usage at API prices. It costs you nothing extra, but it uses your plan limits. The dashboard also shows the latest rate-limit headers from Anthropic.
 - **Routing vs one model**: the Overview and each session price the work tokens (all calls except classifier and director checkpoint calls) at one model, for example Claude Fable 5.1, and compare that with what the routing actually used (API spend plus subscription value). A single model would use a different number of tokens and turns, so this value is an estimate.
 - **Estimated savings**: the cost of the base-tier tokens at the price of the route's top model (the director model for guided routes, or the reference model for direct routes), minus the API spend. Classifier and director calls show as routing overhead. Different models use different numbers of tokens and turns, so this value is an estimate. Use the eval runner for a measured comparison.

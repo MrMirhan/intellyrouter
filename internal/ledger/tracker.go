@@ -27,7 +27,13 @@ type anthropicUsage struct {
 	OutputTokens             *int64           `json:"output_tokens"`
 	CacheCreationInputTokens *int64           `json:"cache_creation_input_tokens"`
 	CacheReadInputTokens     *int64           `json:"cache_read_input_tokens"`
+	CacheCreation            *cacheCreation   `json:"cache_creation"`
 	Iterations               []usageIteration `json:"iterations"`
+}
+
+// cacheCreation splits cache writes by TTL.
+type cacheCreation struct {
+	Ephemeral1h int64 `json:"ephemeral_1h_input_tokens"`
 }
 
 // applyTo overwrites the counters present in u; message_delta usage is cumulative.
@@ -43,6 +49,9 @@ func (u anthropicUsage) applyTo(dst *Usage) {
 	}
 	if u.CacheReadInputTokens != nil {
 		dst.CacheRead = *u.CacheReadInputTokens
+	}
+	if u.CacheCreation != nil {
+		dst.CacheWrite1h = u.CacheCreation.Ephemeral1h
 	}
 }
 
@@ -302,12 +311,13 @@ func truncate(s string, n int) string {
 // usageIteration is one model call inside a response. With the advisor tool,
 // Anthropic also calls the advisor model and reports it only here.
 type usageIteration struct {
-	Type                     string `json:"type"`
-	Model                    string `json:"model"`
-	InputTokens              int64  `json:"input_tokens"`
-	OutputTokens             int64  `json:"output_tokens"`
-	CacheCreationInputTokens int64  `json:"cache_creation_input_tokens"`
-	CacheReadInputTokens     int64  `json:"cache_read_input_tokens"`
+	Type                     string        `json:"type"`
+	Model                    string        `json:"model"`
+	InputTokens              int64         `json:"input_tokens"`
+	OutputTokens             int64         `json:"output_tokens"`
+	CacheCreationInputTokens int64         `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     int64         `json:"cache_read_input_tokens"`
+	CacheCreation            cacheCreation `json:"cache_creation"`
 }
 
 // AdvisorUsage is the usage of one advisor model call.
@@ -328,6 +338,7 @@ func (t *AnthropicTracker) applyIterations(iterations []usageIteration) {
 		}
 		t.Advisors = append(t.Advisors, AdvisorUsage{Model: it.Model, Usage: Usage{
 			Input: it.InputTokens, Output: it.OutputTokens, CacheRead: it.CacheReadInputTokens, CacheWrite: it.CacheCreationInputTokens,
+			CacheWrite1h: it.CacheCreation.Ephemeral1h,
 		}})
 	}
 }

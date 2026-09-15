@@ -40,6 +40,8 @@ type Usage struct {
 	Output     int64
 	CacheRead  int64
 	CacheWrite int64
+	// CacheWrite1h is the part of CacheWrite written with a one-hour TTL.
+	CacheWrite1h int64
 }
 
 // Price is in USD per million tokens.
@@ -51,8 +53,14 @@ type Price struct {
 }
 
 func (p Price) Cost(u Usage) float64 {
-	return (float64(u.Input)*p.In + float64(u.Output)*p.Out +
-		float64(u.CacheRead)*p.CacheRead + float64(u.CacheWrite)*p.CacheWrite) / 1e6
+	// A one-hour cache write costs twice the input price; CacheWrite is the 5-minute rate.
+	write1h := min(u.CacheWrite1h, u.CacheWrite)
+	rate1h := p.CacheWrite
+	if p.In > 0 {
+		rate1h = 2 * p.In
+	}
+	return (float64(u.Input)*p.In + float64(u.Output)*p.Out + float64(u.CacheRead)*p.CacheRead +
+		float64(u.CacheWrite-write1h)*p.CacheWrite + float64(write1h)*rate1h) / 1e6
 }
 
 // Anthropic first-party prices; CacheWrite is the 5-minute rate.
