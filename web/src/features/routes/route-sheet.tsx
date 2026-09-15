@@ -31,10 +31,13 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
+import { AdvisorSettingsFields } from "@/features/routes/advisor-settings"
 import { GuidedSettingsFields } from "@/features/routes/guided-settings"
 import { ModelSelect } from "@/features/routes/model-select"
 import { useCreateRoute, useModels, useProviders, useUpdateRoute } from "@/lib/queries"
 import {
+  advisorChoice,
+  advisorSettings,
   defaultEscalateSettings,
   defaultGuidedSettings,
   defaultLabel,
@@ -129,6 +132,7 @@ function RouteForm({ route, onDone }: { route: Route | null; onDone: () => void 
   const [guided, setGuided] = useState<GuidedSettings>(() =>
     route ? guidedSettings(route) : defaultGuidedSettings,
   )
+  const [advisor, setAdvisor] = useState(() => advisorChoice(route?.settings.advisor))
   const [submitted, setSubmitted] = useState(false)
   const nextKey = useRef(tiers.length)
 
@@ -220,7 +224,7 @@ function RouteForm({ route, onDone }: { route: Route | null; onDone: () => void 
       name: name.trim(),
       strategy,
       tiers: tiers.map((tier) => ({ model_id: tier.modelId, label: tier.label.trim() })),
-      settings: escalate ? settings : strategy === "guided" ? guided : {},
+      settings: { ...(escalate ? settings : strategy === "guided" ? guided : {}), ...advisorSettings(advisor) },
     }
     const onSuccess = (saved: Route) => {
       toast.success(route ? `Saved ${saved.name}` : `Created ${saved.name}`)
@@ -503,6 +507,8 @@ function RouteForm({ route, onDone }: { route: Route | null; onDone: () => void 
                 invalidDirector={submitted && !modelById.get(guided.director.model_id)?.enabled}
               />
             )}
+
+            <AdvisorSettingsFields value={advisor} onChange={setAdvisor} models={modelList} providers={providerList} />
 
             {submitted && problems.length > 0 && (
               <Alert variant="destructive">

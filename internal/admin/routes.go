@@ -117,11 +117,47 @@ func (a *API) normalizeRoute(ctx context.Context, r *store.Route) error {
 	if err := json.Unmarshal([]byte(r.Settings), &settings); err != nil || settings == nil {
 		return errors.New("settings must be a JSON object")
 	}
+	if err := a.validateAdvisor(ctx, r.Settings); err != nil {
+		return err
+	}
 	switch r.Strategy {
 	case store.StrategyEscalate:
 		return a.validateRules(ctx, r.Settings)
 	case store.StrategyGuided:
 		return a.validateGuided(ctx, r.Settings)
+	}
+	return nil
+}
+
+// validateAdvisor checks the advisor model: Anthropic runs the advisor tool,
+// so the model must be on an Anthropic provider.
+func (a *API) validateAdvisor(ctx context.Context, settings string) error {
+	adv, err := store.ParseRouteAdvisor(settings)
+	if err != nil {
+		return fmt.Errorf("advisor: %w", err)
+	}
+	if adv.ModelID == 0 {
+		return nil
+	}
+	if adv.Off {
+		return errors.New("advisor cannot have both a model and off")
+	}
+	m, err := a.store.GetModel(ctx, adv.ModelID)
+	if errors.Is(err, store.ErrNotFound) {
+		return fmt.Errorf("advisor model %d does not exist", adv.ModelID)
+	}
+	if err != nil {
+		return err
+	}
+	if !m.Enabled {
+		return fmt.Errorf("advisor model %s is disabled", m.ModelID)
+	}
+	p, err := a.store.GetProvider(ctx, m.ProviderID)
+	if err != nil {
+		return err
+	}
+	if t := provider.Type(p.Type); t != provider.Anthropic && t != provider.AnthropicSubscription {
+		return fmt.Errorf("advisor model %s must be on an Anthropic provider, because Anthropic runs the advisor", m.ModelID)
 	}
 	return nil
 }
@@ -199,7 +235,8 @@ func (a *API) routesUsingModel(ctx context.Context, modelID int64) ([]string, er
 		return nil, err
 	}
 	for _, rt := range routes {
-		if !slices.Contains(names, rt.Name) && settingsModelID(rt) == modelID {
+		adv, err := store.ParseRouteAdvisor(rt.Settings)
+		if !slices.Contains(names, rt.Name) && (settingsModelID(rt) == modelID || (err == nil && adv.ModelID == modelID)) {
 			names = append(names, rt.Name)
 		}
 	}

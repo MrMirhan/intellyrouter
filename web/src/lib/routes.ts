@@ -1,4 +1,4 @@
-import type { EscalateSettings, GuidedSettings, Route } from "@/lib/types"
+import type { EscalateSettings, GuidedSettings, Route, RouteAdvisor } from "@/lib/types"
 
 export const defaultEscalateSettings: EscalateSettings = {
   classifier: { enabled: false, model_id: 0, target: "top" },
@@ -52,4 +52,16 @@ export function guidedSettings(route: Route): GuidedSettings {
     escalate_after: route.settings.escalate_after ?? defaultGuidedSettings.escalate_after,
     consult: route.settings.consult ?? defaultGuidedSettings.consult,
   }
+}
+
+// advisorChoice is the select value for a route's advisor: "client", "off", or a model row ID.
+export function advisorChoice(advisor?: RouteAdvisor): string {
+  if (advisor?.off) return "off"
+  return advisor?.model_id ? String(advisor.model_id) : "client"
+}
+
+export function advisorSettings(choice: string): { advisor?: RouteAdvisor } {
+  if (choice === "off") return { advisor: { off: true } }
+  if (choice === "client") return {}
+  return { advisor: { model_id: Number(choice) } }
 }

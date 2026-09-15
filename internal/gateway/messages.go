@@ -82,6 +82,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	if cr.capture {
 		e.Input = body
 	}
+	cr.body = s.applyRouteAdvisor(r.Context(), route, cr.body)
 
 	switch route.Strategy {
 	case store.StrategyDirect:

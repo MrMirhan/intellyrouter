@@ -94,12 +94,17 @@ export interface GuidedSettings {
   consult: boolean
 }
 
+export interface RouteAdvisor {
+  model_id?: number
+  off?: boolean
+}
+
 export interface Route {
   id: number
   name: string
   strategy: Strategy
   tiers: Tier[]
-  settings: Partial<EscalateSettings & GuidedSettings>
+  settings: Partial<EscalateSettings & GuidedSettings> & { advisor?: RouteAdvisor }
   created_at: number
 }
 
@@ -107,7 +112,7 @@ export interface RouteInput {
   name: string
   strategy: Strategy
   tiers: Tier[]
-  settings: EscalateSettings | GuidedSettings | Record<string, never>
+  settings: (EscalateSettings | GuidedSettings | object) & { advisor?: RouteAdvisor }
 }
 
 export interface GatewayKey {

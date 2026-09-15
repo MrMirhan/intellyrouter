@@ -100,6 +100,11 @@ function RouteCard({
           <p className="text-xs text-muted-foreground">
             {escalate && (rules.length > 0 ? rules.join(" · ") : "Markers only")}
             {guided && `Director ${modelName(guided.director.model_id)}`}
+            {route.settings.advisor?.model_id
+              ? ` · Advisor ${modelName(route.settings.advisor.model_id)}`
+              : route.settings.advisor?.off
+                ? " · Advisor off"
+                : ""}
             {(escalate || guided) && " · "}
             Created <RelativeTime ms={route.created_at} />
           </p>

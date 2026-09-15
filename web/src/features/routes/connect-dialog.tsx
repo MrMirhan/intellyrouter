@@ -142,7 +142,9 @@ function ConnectBody({ route }: { route: Route }) {
   const [subagentRoute, setSubagentRoute] = useState(route.name)
   const [format, setFormat] = useState<SnippetFormat>("shell")
   const [longContext, setLongContext] = useState(true)
-  const [advisor, setAdvisor] = useState("off")
+  const [advisor, setAdvisor] = useState(
+    route.settings.advisor?.model_id ? String(route.settings.advisor.model_id) : "off",
+  )
   const models = useModels()
   const providers = useProviders()
 
