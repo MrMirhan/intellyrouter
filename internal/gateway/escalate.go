@@ -69,7 +69,11 @@ func (s *Server) escalate(w http.ResponseWriter, r *http.Request, route store.Ro
 	if dec.Tier > 0 {
 		leg.Role = ledger.RoleEscalation
 	}
-	leg.Note = fmt.Sprintf("tier %s: %s", labels[dec.Tier], dec.Reason)
+	note := fmt.Sprintf("tier %s: %s", labels[dec.Tier], dec.Reason)
+	if leg.Note != "" {
+		note += "; " + leg.Note
+	}
+	leg.Note = note
 	e.Legs = append(e.Legs, leg)
 	e.Finish(leg.Status, leg.HTTPStatus, leg.Error)
 }

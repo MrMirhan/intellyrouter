@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -118,15 +119,37 @@ func (a *API) getSettings(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		ref = ledger.DefaultReferenceModel
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"reference_model": ref})
+	fallback, _, err := a.store.Setting(r.Context(), store.FallbackRouteSetting)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"reference_model": ref, "fallback_route": fallback})
 }
 
 func (a *API) putSettings(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		ReferenceModel *string `json:"reference_model"`
+		FallbackRoute  *string `json:"fallback_route"`
 	}
 	if !decode(w, r, &in) {
 		return
+	}
+	if in.FallbackRoute != nil {
+		v := strings.TrimSpace(*in.FallbackRoute)
+		if v != "" {
+			if _, err := a.store.RouteByName(r.Context(), v); errors.Is(err, store.ErrNotFound) {
+				writeError(w, http.StatusBadRequest, "fallback_route "+v+" does not exist")
+				return
+			} else if err != nil {
+				a.fail(w, err)
+				return
+			}
+		}
+		if err := a.store.SetSetting(r.Context(), store.FallbackRouteSetting, v); err != nil {
+			a.fail(w, err)
+			return
+		}
 	}
 	if in.ReferenceModel != nil {
 		v := strings.TrimSpace(*in.ReferenceModel)

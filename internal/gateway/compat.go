@@ -1,0 +1,183 @@
+package gateway
+
+import (
+	"bytes"
+	"encoding/json"
+	"regexp"
+	"slices"
+	"strings"
+	"sync"
+
+	"intellyrouter/internal/jsonbytes"
+)
+
+// Claude Code picks request features from the model name it sends, and a
+// route name looks like a current Claude model. An older or third-party model
+// behind the route can reject some of those features with a 400. The gateway
+// then removes the rejected feature, retries, and remembers the change for
+// that model.
+
+const maxAdaptations = 4
+
+// A request cannot work without these fields, so they are never dropped.
+var essentialFields = map[string]bool{
+	"model": true, "messages": true, "max_tokens": true, "system": true,
+	"tools": true, "tool_choice": true, "stream": true,
+}
+
+var extraInputs = regexp.MustCompile(`^([a-z_]+)(?:\.[^:]*)?: Extra inputs are not permitted`)
+
+// adaptationFor maps a 400 error message to the change that avoids it.
+func adaptationFor(message string) (string, bool) {
+	lower := strings.ToLower(message)
+	switch {
+	case strings.Contains(lower, "effort parameter"):
+		return "effort", true
+	case strings.Contains(lower, "thinking") && strings.Contains(lower, "not supported"):
+		return "thinking", true
+	case strings.Contains(lower, "role 'system'") || strings.Contains(lower, `role "system"`):
+		return "system_messages", true
+	}
+	if m := extraInputs.FindStringSubmatch(message); m != nil && !essentialFields[m[1]] {
+		return "field:" + m[1], true
+	}
+	return "", false
+}
+
+type compat struct {
+	mu      sync.Mutex
+	byModel map[int64][]string
+}
+
+func newCompat() *compat {
+	return &compat{byModel: make(map[int64][]string)}
+}
+
+// apply makes the changes already learned for the model.
+func (c *compat) apply(modelID int64, body []byte) ([]byte, []string) {
+	c.mu.Lock()
+	known := slices.Clone(c.byModel[modelID])
+	c.mu.Unlock()
+	var applied []string
+	for _, a := range known {
+		if out, changed, err := adapt(body, a); err == nil && changed {
+			body, applied = out, append(applied, a)
+		}
+	}
+	return body, applied
+}
+
+// learn reads a 400 response body and returns the request body without the
+// rejected feature. It returns false when the error is not a known feature
+// rejection or the request does not use that feature.
+func (c *compat) learn(modelID int64, errBody, body []byte) ([]byte, string, bool) {
+	var e struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(errBody, &e) != nil {
+		return nil, "", false
+	}
+	a, ok := adaptationFor(e.Error.Message)
+	if !ok {
+		return nil, "", false
+	}
+	out, changed, err := adapt(body, a)
+	if err != nil || !changed {
+		return nil, "", false
+	}
+	c.mu.Lock()
+	if !slices.Contains(c.byModel[modelID], a) {
+		c.byModel[modelID] = append(c.byModel[modelID], a)
+	}
+	c.mu.Unlock()
+	return out, a, true
+}
+
+func adapt(body []byte, adaptation string) ([]byte, bool, error) {
+	switch {
+	case adaptation == "effort":
+		return dropEffort(body)
+	case adaptation == "thinking":
+		return jsonbytes.RemoveField(body, "thinking")
+	case adaptation == "system_messages":
+		return systemMessagesToUser(body)
+	case strings.HasPrefix(adaptation, "field:"):
+		return jsonbytes.RemoveField(body, strings.TrimPrefix(adaptation, "field:"))
+	}
+	return body, false, nil
+}
+
+func dropEffort(body []byte) ([]byte, bool, error) {
+	spans, err := jsonbytes.TopLevel(body)
+	if err != nil {
+		return nil, false, err
+	}
+	sp, ok := spans["output_config"]
+	if !ok {
+		return body, false, nil
+	}
+	var cfg map[string]json.RawMessage
+	if err := json.Unmarshal(body[sp.Start:sp.End], &cfg); err != nil {
+		return nil, false, err
+	}
+	if _, ok := cfg["effort"]; !ok {
+		return body, false, nil
+	}
+	delete(cfg, "effort")
+	if len(cfg) == 0 {
+		return jsonbytes.RemoveField(body, "output_config")
+	}
+	v, err := json.Marshal(cfg)
+	if err != nil {
+		return nil, false, err
+	}
+	out, err := jsonbytes.SetField(body, "output_config", v)
+	return out, err == nil, err
+}
+
+// systemMessagesToUser turns mid-conversation system messages into user
+// messages. The API merges consecutive user turns.
+func systemMessagesToUser(body []byte) ([]byte, bool, error) {
+	spans, err := jsonbytes.TopLevel(body)
+	if err != nil {
+		return nil, false, err
+	}
+	sp, ok := spans["messages"]
+	if !ok {
+		return body, false, nil
+	}
+	var msgs []json.RawMessage
+	if err := json.Unmarshal(body[sp.Start:sp.End], &msgs); err != nil {
+		return nil, false, err
+	}
+	changed := false
+	for i, m := range msgs {
+		var head struct {
+			Role string `json:"role"`
+		}
+		if json.Unmarshal(m, &head) != nil || head.Role != "system" {
+			continue
+		}
+		out, err := jsonbytes.SetField(m, "role", []byte(`"user"`))
+		if err != nil {
+			return nil, false, err
+		}
+		msgs[i], changed = out, true
+	}
+	if !changed {
+		return body, false, nil
+	}
+	var arr bytes.Buffer
+	arr.WriteByte('[')
+	for i, m := range msgs {
+		if i > 0 {
+			arr.WriteByte(',')
+		}
+		arr.Write(m)
+	}
+	arr.WriteByte(']')
+	out, err := jsonbytes.SetField(body, "messages", arr.Bytes())
+	return out, err == nil, err
+}

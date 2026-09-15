@@ -10,6 +10,10 @@ import (
 // seen on a subscription response, as JSON.
 const SubscriptionLimitsSetting = "subscription_rate_limits"
 
+// FallbackRouteSetting names the route that serves model names without a route,
+// such as Claude Code background calls. Empty means those requests get a 404.
+const FallbackRouteSetting = "fallback_route"
+
 func (s *Store) Setting(ctx context.Context, key string) (string, bool, error) {
 	var v string
 	err := s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)

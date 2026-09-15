@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -36,24 +37,42 @@ var skipResponseHeaders = map[string]bool{
 func (s *Server) forward(w http.ResponseWriter, r *http.Request, t target, body []byte, claudeAuth string) ledger.Leg {
 	leg := t.newLeg()
 	start := time.Now()
-	req, err := provider.NewAnthropicRequest(r.Context(), t.config, r.URL.Path, r.URL.RawQuery, body, r.Header, claudeAuth)
-	if err != nil {
-		leg.Status, leg.HTTPStatus, leg.Error = ledger.StatusError, http.StatusInternalServerError, err.Error()
-		s.internalError(w, "build upstream request", err)
-		return leg
-	}
-	resp, err := s.client.Do(req)
-	if err != nil {
-		leg.Latency = time.Since(start)
-		if r.Context().Err() != nil {
-			leg.Status = ledger.StatusCanceled
+	body, adapted := s.compat.apply(t.model.ID, body)
+	var resp *http.Response
+	for {
+		req, err := provider.NewAnthropicRequest(r.Context(), t.config, r.URL.Path, r.URL.RawQuery, body, r.Header, claudeAuth)
+		if err != nil {
+			leg.Status, leg.HTTPStatus, leg.Error = ledger.StatusError, http.StatusInternalServerError, err.Error()
+			s.internalError(w, "build upstream request", err)
 			return leg
 		}
-		leg.Status, leg.HTTPStatus, leg.Error = ledger.StatusError, http.StatusBadGateway, "upstream request failed: "+err.Error()
-		writeError(w, http.StatusBadGateway, "api_error", leg.Error)
-		return leg
+		resp, err = s.client.Do(req)
+		if err != nil {
+			leg.Latency = time.Since(start)
+			if r.Context().Err() != nil {
+				leg.Status = ledger.StatusCanceled
+				return leg
+			}
+			leg.Status, leg.HTTPStatus, leg.Error = ledger.StatusError, http.StatusBadGateway, "upstream request failed: "+err.Error()
+			writeError(w, http.StatusBadGateway, "api_error", leg.Error)
+			return leg
+		}
+		if resp.StatusCode != http.StatusBadRequest || len(adapted) >= maxAdaptations {
+			break
+		}
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		resp.Body.Close()
+		next, adaptation, ok := s.compat.learn(t.model.ID, errBody, body)
+		if !ok {
+			resp.Body = io.NopCloser(bytes.NewReader(errBody))
+			break
+		}
+		body, adapted = next, append(adapted, adaptation)
 	}
 	defer resp.Body.Close()
+	if len(adapted) > 0 {
+		leg.Note = "adapted for " + t.model.ModelID + ": " + strings.Join(adapted, ", ")
+	}
 
 	var tr ledger.AnthropicTracker
 	relayErr := relay(w, resp, &tr)

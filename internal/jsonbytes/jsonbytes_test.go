@@ -19,8 +19,8 @@ func TestSetFieldReplacesOnlyTheValue(t *testing.T) {
 
 func TestSetFieldAppendsMissingKey(t *testing.T) {
 	cases := map[string]string{
-		`{"a":1}`:           `{"a":1,"model":"m"}`,
-		`{}`:                `{"model":"m"}`,
+		`{"a":1}`:         `{"a":1,"model":"m"}`,
+		`{}`:              `{"model":"m"}`,
 		"{\"a\":[1,2]\n}": "{\"a\":[1,2]\n,\"model\":\"m\"}",
 	}
 	for in, want := range cases {
@@ -52,6 +52,27 @@ func TestTopLevelSpans(t *testing.T) {
 		if got := string(body[sp.Start:sp.End]); got != v {
 			t.Errorf("span %q = %s, want %s", k, got, v)
 		}
+	}
+}
+
+func TestRemoveField(t *testing.T) {
+	body := `{"a":1, "b":2,"c":3}`
+	cases := map[string]string{
+		"a": `{ "b":2,"c":3}`,
+		"b": `{"a":1,"c":3}`,
+		"c": `{"a":1, "b":2}`,
+	}
+	for key, want := range cases {
+		got, removed, err := RemoveField([]byte(body), key)
+		if err != nil || !removed || string(got) != want || !json.Valid(got) {
+			t.Errorf("RemoveField(%s) = %s, %v, %v; want %s", key, got, removed, err, want)
+		}
+	}
+	if got, removed, _ := RemoveField([]byte(`{"a":1}`), "a"); string(got) != `{}` || !removed {
+		t.Errorf("removing the only key = %s, %v", got, removed)
+	}
+	if got, removed, _ := RemoveField([]byte(body), "missing"); string(got) != body || removed {
+		t.Errorf("removing a missing key = %s, %v", got, removed)
 	}
 }
 

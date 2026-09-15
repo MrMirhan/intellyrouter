@@ -40,4 +40,10 @@ func TestStatsEndpoint(t *testing.T) {
 		t.Fatalf("stats = %+v", got)
 	}
 	c.do("GET", "/api/admin/stats?range=1y", nil, http.StatusBadRequest)
+
+	c.do("PUT", "/api/admin/settings", map[string]any{"fallback_route": "missing"}, http.StatusBadRequest)
+	settings := c.do("PUT", "/api/admin/settings", map[string]any{"fallback_route": ""}, http.StatusOK)
+	if !bytes.Contains(settings, []byte(`"fallback_route":""`)) || !bytes.Contains(settings, []byte(`"reference_model":"claude-fable-5-1"`)) {
+		t.Fatalf("settings = %s", settings)
+	}
 }

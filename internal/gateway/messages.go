@@ -189,6 +189,11 @@ func readRequest(w http.ResponseWriter, r *http.Request) ([]byte, requestMeta, b
 func (s *Server) route(w http.ResponseWriter, r *http.Request, name string) (store.Route, bool) {
 	route, err := s.store.RouteByName(r.Context(), name)
 	if errors.Is(err, store.ErrNotFound) {
+		if fallback, ok, ferr := s.store.Setting(r.Context(), store.FallbackRouteSetting); ferr == nil && ok && fallback != "" {
+			route, err = s.store.RouteByName(r.Context(), fallback)
+		}
+	}
+	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "not_found_error", fmt.Sprintf("model %q is not a configured route", name))
 		return store.Route{}, false
 	}

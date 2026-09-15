@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -109,7 +110,7 @@ func (r *Recorder) Record(ctx context.Context, e Entry) {
 			LatencyMS:        l.Latency.Milliseconds(),
 			Status:           l.Status,
 			StopReason:       l.StopReason,
-			Note:             strings.TrimPrefix(l.Note+"; "+l.Error, "; "),
+			Note:             strings.Join(slices.DeleteFunc([]string{l.Note, l.Error}, func(s string) bool { return s == "" }), "; "),
 		})
 	}
 	if _, err := r.store.InsertRequest(ctx, req); err != nil {

@@ -13,8 +13,14 @@ type Span struct{ Start, End int }
 
 var ErrNotObject = errors.New("jsonbytes: body is not a JSON object")
 
-// TopLevel returns the value span of every top-level key of a JSON object.
-func TopLevel(body []byte) (map[string]Span, error) {
+type member struct {
+	key string
+	// from is where the member starts: its key, or the comma before a later member.
+	from  int
+	value Span
+}
+
+func members(body []byte) ([]member, error) {
 	dec := json.NewDecoder(bytes.NewReader(body))
 	tok, err := dec.Token()
 	if err != nil {
@@ -23,8 +29,9 @@ func TopLevel(body []byte) (map[string]Span, error) {
 	if d, ok := tok.(json.Delim); !ok || d != '{' {
 		return nil, ErrNotObject
 	}
-	spans := make(map[string]Span)
+	var out []member
 	for dec.More() {
+		from := int(dec.InputOffset())
 		tok, err := dec.Token()
 		if err != nil {
 			return nil, err
@@ -38,10 +45,23 @@ func TopLevel(body []byte) (map[string]Span, error) {
 			return nil, err
 		}
 		end := int(dec.InputOffset())
-		spans[key] = Span{Start: end - len(raw), End: end}
+		out = append(out, member{key: key, from: from, value: Span{Start: end - len(raw), End: end}})
 	}
 	if _, err := dec.Token(); err != nil {
 		return nil, err
+	}
+	return out, nil
+}
+
+// TopLevel returns the value span of every top-level key of a JSON object.
+func TopLevel(body []byte) (map[string]Span, error) {
+	ms, err := members(body)
+	if err != nil {
+		return nil, err
+	}
+	spans := make(map[string]Span, len(ms))
+	for _, m := range ms {
+		spans[m.key] = m.value
 	}
 	return spans, nil
 }
@@ -69,6 +89,25 @@ func SetField(body []byte, key string, value []byte) ([]byte, error) {
 	ins = append(ins, value...)
 	end := bytes.LastIndexByte(body, '}')
 	return splice(body, end, end, ins), nil
+}
+
+// RemoveField deletes a top-level key and reports whether it was present.
+func RemoveField(body []byte, key string) ([]byte, bool, error) {
+	ms, err := members(body)
+	if err != nil {
+		return nil, false, err
+	}
+	for i, m := range ms {
+		if m.key != key {
+			continue
+		}
+		if i == 0 && len(ms) > 1 {
+			// ms[1].from is the comma after this member; remove it too.
+			return splice(body, m.from, ms[1].from+1, nil), true, nil
+		}
+		return splice(body, m.from, m.value.End, nil), true, nil
+	}
+	return body, false, nil
 }
 
 func splice(b []byte, start, end int, repl []byte) []byte {
