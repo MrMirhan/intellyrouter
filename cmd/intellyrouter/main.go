@@ -18,6 +18,7 @@ import (
 
 	"intellyrouter/internal/admin"
 	"intellyrouter/internal/dashboard"
+	"intellyrouter/internal/eval"
 	"intellyrouter/internal/gateway"
 	"intellyrouter/internal/ledger"
 	"intellyrouter/internal/store"
@@ -39,6 +40,8 @@ func run() error {
 	addr := flag.String("addr", "127.0.0.1:7117", "listen address")
 	dataDir := flag.String("data", filepath.Join(home, ".intellyrouter"), "data directory")
 	resetAdmin := flag.Bool("reset-admin-token", false, "issue a new admin token and print it")
+	evalTasks := flag.String("eval-tasks", "eval/tasks", "directory with eval tasks for the dashboard")
+	claude := flag.String("claude", "claude", "Claude Code binary that eval runs start")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -66,10 +69,15 @@ func run() error {
 		fmt.Printf("Admin token (shown once, store it safely): %s\n", token)
 	}
 
+	if err := st.FailInterruptedEvalRuns(ctx); err != nil {
+		return err
+	}
+	evals := eval.NewManager(st, *evalTasks, localURL(*addr), *claude, log)
+
 	client := &http.Client{}
 	mux := http.NewServeMux()
 	gateway.New(st, ledger.NewRecorder(st, log), client, log).Register(mux)
-	admin.New(st, client, log).Register(mux)
+	admin.New(st, client, log, evals).Register(mux)
 	mux.HandleFunc("GET /api/", notFound)
 	mux.HandleFunc("GET /v1/", notFound)
 	mux.Handle("GET /", dashboard.Handler(web.Assets()))
@@ -87,6 +95,7 @@ func run() error {
 		return err
 	case <-ctx.Done():
 	}
+	evals.Shutdown()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil && !errors.Is(err, context.DeadlineExceeded) {
@@ -99,6 +108,19 @@ func notFound(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusNotFound)
 	_, _ = io.WriteString(w, `{"error":"not found"}`)
+}
+
+// localURL is the address that Claude Code, started by eval runs on this
+// machine, uses to reach the gateway.
+func localURL(addr string) string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "http://" + addr
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	return "http://" + net.JoinHostPort(host, port)
 }
 
 func isLoopback(addr string) bool {

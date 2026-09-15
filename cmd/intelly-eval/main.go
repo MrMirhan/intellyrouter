@@ -66,11 +66,9 @@ func run() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	cfg := eval.Config{
-		Gateway: *gateway, GatewayKey: *key, AdminToken: *adminToken,
-		Mode: eval.Mode(*mode), Claude: *claude, HTTP: &http.Client{Timeout: 30 * time.Second},
-	}
-	known, err := eval.Routes(ctx, cfg)
+	adminLedger := eval.AdminLedger{Gateway: *gateway, Token: *adminToken, HTTP: &http.Client{Timeout: 30 * time.Second}}
+	cfg := eval.Config{Gateway: *gateway, GatewayKey: *key, Mode: eval.Mode(*mode), Claude: *claude, Ledger: adminLedger}
+	known, err := adminLedger.Routes(ctx)
 	if err != nil {
 		return fmt.Errorf("read routes from the gateway: %w", err)
 	}

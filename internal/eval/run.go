@@ -3,12 +3,8 @@ package eval
 import (
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,10 +26,9 @@ const (
 type Config struct {
 	Gateway    string
 	GatewayKey string
-	AdminToken string
 	Mode       Mode
 	Claude     string
-	HTTP       *http.Client
+	Ledger     Ledger
 }
 
 type Result struct {
@@ -92,13 +87,13 @@ func Run(ctx context.Context, cfg Config, task Task, route string) Result {
 	}
 	res.Passed, res.TestOutput = runTests(ctx, task, dir)
 
-	u, err := sessionUsage(ctx, cfg, session)
+	u, err := cfg.Ledger.SessionUsage(context.WithoutCancel(ctx), session)
 	if err != nil {
 		errs = append(errs, fmt.Errorf("ledger: %w", err))
 	}
-	res.Requests, res.EscalatedRequests = u.requests, u.escalated
-	res.CostUSD, res.SubscriptionValueUSD = u.cost, u.subscriptionValue
-	res.APITokens, res.SubscriptionTokens = u.apiTokens, u.subscriptionTokens
+	res.Requests, res.EscalatedRequests = u.Requests, u.EscalatedRequests
+	res.CostUSD, res.SubscriptionValueUSD = u.CostUSD, u.SubscriptionValueUSD
+	res.APITokens, res.SubscriptionTokens = u.APITokens, u.SubscriptionTokens
 	return res
 }
 
@@ -165,98 +160,6 @@ func runTests(ctx context.Context, task Task, dir string) (bool, string) {
 	cmd.Dir, cmd.Env = dir, cleanEnv()
 	out, err := cmd.CombinedOutput()
 	return err == nil, tail(string(out), 4000)
-}
-
-type usage struct {
-	requests           int
-	escalated          int
-	cost               float64
-	subscriptionValue  float64
-	apiTokens          int64
-	subscriptionTokens int64
-}
-
-func sessionUsage(ctx context.Context, cfg Config, session string) (usage, error) {
-	var list struct {
-		Items []struct {
-			ID int64 `json:"id"`
-		} `json:"items"`
-	}
-	if err := adminGet(ctx, cfg, "/api/admin/requests?limit=500&session_id="+url.QueryEscape(session), &list); err != nil {
-		return usage{}, err
-	}
-	var u usage
-	for _, item := range list.Items {
-		var req struct {
-			CostUSD              float64 `json:"cost_usd"`
-			SubscriptionValueUSD float64 `json:"subscription_value_usd"`
-			Legs                 []struct {
-				Role             string `json:"role"`
-				Billing          string `json:"billing"`
-				InputTokens      int64  `json:"input_tokens"`
-				OutputTokens     int64  `json:"output_tokens"`
-				CacheReadTokens  int64  `json:"cache_read_tokens"`
-				CacheWriteTokens int64  `json:"cache_write_tokens"`
-			} `json:"legs"`
-		}
-		if err := adminGet(ctx, cfg, fmt.Sprintf("/api/admin/requests/%d", item.ID), &req); err != nil {
-			return u, err
-		}
-		u.requests++
-		u.cost += req.CostUSD
-		u.subscriptionValue += req.SubscriptionValueUSD
-		escalated := false
-		for _, l := range req.Legs {
-			tokens := l.InputTokens + l.OutputTokens + l.CacheReadTokens + l.CacheWriteTokens
-			switch {
-			case l.Billing == "subscription":
-				u.subscriptionTokens += tokens
-			case l.Role != "classifier":
-				u.apiTokens += tokens
-			}
-			escalated = escalated || l.Role == "escalation"
-		}
-		if escalated {
-			u.escalated++
-		}
-	}
-	return u, nil
-}
-
-// Routes returns the names of the routes the gateway serves.
-func Routes(ctx context.Context, cfg Config) ([]string, error) {
-	var routes []struct {
-		Name string `json:"name"`
-	}
-	if err := adminGet(ctx, cfg, "/api/admin/routes", &routes); err != nil {
-		return nil, err
-	}
-	names := make([]string, 0, len(routes))
-	for _, r := range routes {
-		names = append(names, r.Name)
-	}
-	return names, nil
-}
-
-func adminGet(ctx context.Context, cfg Config, path string, v any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(cfg.Gateway, "/")+path, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+cfg.AdminToken)
-	resp, err := cfg.HTTP.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("GET %s: %s: %s", path, resp.Status, tail(string(body), 300))
-	}
-	return json.Unmarshal(body, v)
 }
 
 func newSessionID() string {

@@ -80,7 +80,10 @@ func TestRunGradesAndReadsLedger(t *testing.T) {
 	for _, mode := range []Mode{ModeKey, ModeSubscription} {
 		t.Run(string(mode), func(t *testing.T) {
 			admin := fakeAdmin(t)
-			cfg := Config{Gateway: admin.URL, GatewayKey: "ik_test", AdminToken: "admin-token", Mode: mode, Claude: claude, HTTP: admin.Client()}
+			cfg := Config{
+				Gateway: admin.URL, GatewayKey: "ik_test", Mode: mode, Claude: claude,
+				Ledger: AdminLedger{Gateway: admin.URL, Token: "admin-token", HTTP: admin.Client()},
+			}
 			res := Run(context.Background(), cfg, task, "intelly-claude-auto")
 			if !res.Passed || res.Error != "" {
 				t.Fatalf("result = %+v", res)

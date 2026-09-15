@@ -88,7 +88,7 @@ func TestProviderModelRouteFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	admin.New(st, upstream.Client(), slog.New(slog.DiscardHandler)).Register(mux)
+	admin.New(st, upstream.Client(), slog.New(slog.DiscardHandler), nil).Register(mux)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -190,7 +190,7 @@ func TestMutationsRequireJSON(t *testing.T) {
 	defer st.Close()
 	token, _ := st.EnsureAdminToken(t.Context(), false)
 	mux := http.NewServeMux()
-	admin.New(st, http.DefaultClient, slog.New(slog.DiscardHandler)).Register(mux)
+	admin.New(st, http.DefaultClient, slog.New(slog.DiscardHandler), nil).Register(mux)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 

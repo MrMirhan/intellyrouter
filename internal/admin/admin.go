@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"intellyrouter/internal/eval"
 	"intellyrouter/internal/store"
 )
 
@@ -19,19 +20,23 @@ type API struct {
 	store  *store.Store
 	client *http.Client
 	log    *slog.Logger
+	eval   *eval.Manager
 }
 
-func New(st *store.Store, client *http.Client, log *slog.Logger) *API {
-	return &API{store: st, client: client, log: log}
+// New creates the admin API. A nil eval manager leaves the eval endpoints out.
+func New(st *store.Store, client *http.Client, log *slog.Logger, ev *eval.Manager) *API {
+	return &API{store: st, client: client, log: log, eval: ev}
+}
+
+type endpoint struct {
+	pattern string
+	handler http.HandlerFunc
 }
 
 func (a *API) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/login", a.login)
 	mux.HandleFunc("POST /api/admin/logout", a.logout)
-	for _, rt := range []struct {
-		pattern string
-		handler http.HandlerFunc
-	}{
+	endpoints := []endpoint{
 		{"GET /api/admin/session", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }},
 
 		{"GET /api/admin/providers", a.listProviders},
@@ -61,8 +66,19 @@ func (a *API) Register(mux *http.ServeMux) {
 
 		{"GET /api/admin/settings", a.getSettings},
 		{"PUT /api/admin/settings", a.putSettings},
-	} {
-		mux.Handle(rt.pattern, a.requireAdmin(rt.handler))
+	}
+	if a.eval != nil {
+		endpoints = append(endpoints,
+			endpoint{"GET /api/admin/eval/tasks", a.getEvalTasks},
+			endpoint{"GET /api/admin/eval/runs", a.listEvalRuns},
+			endpoint{"POST /api/admin/eval/runs", a.createEvalRun},
+			endpoint{"GET /api/admin/eval/runs/{id}", a.getEvalRun},
+			endpoint{"POST /api/admin/eval/runs/{id}/cancel", a.cancelEvalRun},
+			endpoint{"DELETE /api/admin/eval/runs/{id}", a.deleteEvalRun},
+		)
+	}
+	for _, e := range endpoints {
+		mux.Handle(e.pattern, a.requireAdmin(e.handler))
 	}
 }
 
