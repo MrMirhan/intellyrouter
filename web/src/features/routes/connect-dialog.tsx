@@ -23,10 +23,22 @@ import {
 } from "@/components/ui/select"
 import { Spinner } from "@/components/ui/spinner"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { useCreateKey, useRoutes } from "@/lib/queries"
 import type { Route } from "@/lib/types"
 
-const betasLine = "export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1"
+type EnvVar = [name: string, value: string]
+type SnippetFormat = "shell" | "settings"
+
+const betasEnv: EnvVar[] = [["CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", "1"]]
+
+function exportLines(env: EnvVar[]): string {
+  return env.map(([name, value]) => `export ${name}=${shellQuote(value)}`).join("\n")
+}
+
+function settingsJSON(env: EnvVar[]): string {
+  return JSON.stringify({ env: Object.fromEntries(env) }, null, 2)
+}
 
 function shellQuote(value: string): string {
   return /^[\w.:/@%+=,-]+$/.test(value) ? value : `'${value.replaceAll("'", `'\\''`)}'`
@@ -45,6 +57,14 @@ function Snippet({ text, label }: { text: string; label: string }) {
         <CopyButton value={text} />
       </div>
     </div>
+  )
+}
+
+function EnvSnippet({ env, format, label }: { env: EnvVar[]; format: SnippetFormat; label: string }) {
+  return format === "shell" ? (
+    <Snippet text={exportLines(env)} label={`${label} commands`} />
+  ) : (
+    <Snippet text={settingsJSON(env)} label={`${label} settings.json`} />
   )
 }
 
@@ -106,30 +126,31 @@ function ConnectBody({ route }: { route: Route }) {
   const [createdName, setCreatedName] = useState("")
   const [haikuRoute, setHaikuRoute] = useState(route.name)
   const [subagentRoute, setSubagentRoute] = useState(route.name)
+  const [format, setFormat] = useState<SnippetFormat>("shell")
 
   const routeNames = [
     ...new Set([route.name, ...(routes.data ?? []).map((item) => item.name)]),
   ]
-  const origin = shellQuote(window.location.origin)
+  const origin = window.location.origin
   const keyText = key.trim() || "<gateway key>"
-  const modelLines = [
-    `export ANTHROPIC_MODEL=${shellQuote(route.name)}`,
-    `export ANTHROPIC_DEFAULT_OPUS_MODEL=${shellQuote(route.name)}`,
-    `export ANTHROPIC_DEFAULT_SONNET_MODEL=${shellQuote(route.name)}`,
-    `export ANTHROPIC_DEFAULT_HAIKU_MODEL=${shellQuote(haikuRoute)}`,
-    `export CLAUDE_CODE_SUBAGENT_MODEL=${shellQuote(subagentRoute)}`,
+  const modelEnv: EnvVar[] = [
+    ["ANTHROPIC_MODEL", route.name],
+    ["ANTHROPIC_DEFAULT_OPUS_MODEL", route.name],
+    ["ANTHROPIC_DEFAULT_SONNET_MODEL", route.name],
+    ["ANTHROPIC_DEFAULT_HAIKU_MODEL", haikuRoute],
+    ["CLAUDE_CODE_SUBAGENT_MODEL", subagentRoute],
   ]
-  const gatewaySnippet = [
-    `export ANTHROPIC_BASE_URL=${origin}`,
-    `export ANTHROPIC_AUTH_TOKEN=${shellQuote(keyText)}`,
-    ...modelLines,
-    "export CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1",
-  ].join("\n")
-  const subscriptionSnippet = [
-    `export ANTHROPIC_BASE_URL=${origin}`,
-    `export ANTHROPIC_CUSTOM_HEADERS=${shellQuote(`x-intelly-key: ${keyText}`)}`,
-    ...modelLines,
-  ].join("\n")
+  const gatewayEnv: EnvVar[] = [
+    ["ANTHROPIC_BASE_URL", origin],
+    ["ANTHROPIC_AUTH_TOKEN", keyText],
+    ...modelEnv,
+    ["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY", "1"],
+  ]
+  const subscriptionEnv: EnvVar[] = [
+    ["ANTHROPIC_BASE_URL", origin],
+    ["ANTHROPIC_CUSTOM_HEADERS", `x-intelly-key: ${keyText}`],
+    ...modelEnv,
+  ]
 
   const create = (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -147,7 +168,7 @@ function ConnectBody({ route }: { route: Route }) {
       <DialogHeader>
         <DialogTitle>Connect Claude Code to {route.name}</DialogTitle>
         <DialogDescription>
-          Run these commands in the shell where you start Claude Code.
+          Set these variables in the shell where you start Claude Code, or in a Claude Code settings file.
         </DialogDescription>
       </DialogHeader>
 
@@ -232,6 +253,36 @@ function ConnectBody({ route }: { route: Route }) {
         </div>
       </section>
 
+      <div className="grid gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p id="snippet-format-label" className="text-sm font-medium">
+            Setup format
+          </p>
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            size="sm"
+            value={format}
+            onValueChange={(next) => {
+              if (next === "shell" || next === "settings") setFormat(next)
+            }}
+            aria-labelledby="snippet-format-label"
+          >
+            <ToggleGroupItem value="shell">Shell exports</ToggleGroupItem>
+            <ToggleGroupItem value="settings">settings.json</ToggleGroupItem>
+          </ToggleGroup>
+        </div>
+        {format === "settings" && (
+          <p className="text-sm text-muted-foreground">
+            Add the <code>env</code> block to <code>~/.claude/settings.json</code> to use the
+            gateway in every project, or to <code>.claude/settings.local.json</code> for one
+            project. When the file has other settings, merge only the <code>env</code> block. Do
+            not put it in a shared <code>.claude/settings.json</code>: that file goes into git, and
+            the gateway key is a secret. Restart Claude Code after you change the file.
+          </p>
+        )}
+      </div>
+
       <Tabs defaultValue="gateway-key" className="min-w-0">
         <TabsList>
           <TabsTrigger value="gateway-key">Gateway key</TabsTrigger>
@@ -242,7 +293,7 @@ function ConnectBody({ route }: { route: Route }) {
             Claude Code authenticates to the gateway with the gateway key. Use this mode when the
             route runs on API providers only.
           </p>
-          <Snippet text={gatewaySnippet} label="Gateway key mode commands" />
+          <EnvSnippet env={gatewayEnv} format={format} label="Gateway key mode" />
           <p className="text-sm text-muted-foreground">
             With model discovery on, <code>/model</code> in Claude Code lists every route whose
             name contains <code>claude</code>.
@@ -253,7 +304,7 @@ function ConnectBody({ route }: { route: Route }) {
             Claude Code keeps your own Claude login, and the gateway key travels in a separate
             header. Use this mode when a tier runs on your Claude subscription.
           </p>
-          <Snippet text={subscriptionSnippet} label="Claude subscription mode commands" />
+          <EnvSnippet env={subscriptionEnv} format={format} label="Claude subscription mode" />
           <Alert>
             <InfoIcon />
             <AlertTitle>Do not set ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY</AlertTitle>
@@ -269,10 +320,11 @@ function ConnectBody({ route }: { route: Route }) {
         <p className="text-sm">
           <span className="font-medium">Optional:</span>{" "}
           <span className="text-muted-foreground">
-            add this line when a non-Claude provider rejects beta fields in requests.
+            {format === "shell" ? "add this line" : "add this variable to the env block"} when a
+            non-Claude provider rejects beta fields in requests.
           </span>
         </p>
-        <Snippet text={betasLine} label="Optional command" />
+        <EnvSnippet env={betasEnv} format={format} label="Optional" />
       </div>
     </div>
   )
