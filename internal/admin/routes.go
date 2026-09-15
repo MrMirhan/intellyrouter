@@ -7,8 +7,11 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 
+	"intellyrouter/internal/escalate"
+	"intellyrouter/internal/provider"
 	"intellyrouter/internal/store"
 )
 
@@ -109,7 +112,59 @@ func (a *API) normalizeRoute(ctx context.Context, r *store.Route) error {
 	if err := json.Unmarshal([]byte(r.Settings), &settings); err != nil || settings == nil {
 		return errors.New("settings must be a JSON object")
 	}
+	if r.Strategy == store.StrategyEscalate {
+		return a.validateRules(ctx, r.Settings)
+	}
 	return nil
+}
+
+func (a *API) validateRules(ctx context.Context, settings string) error {
+	rules, err := escalate.ParseRules(settings)
+	if err != nil {
+		return err
+	}
+	if !rules.Classifier.Enabled {
+		return nil
+	}
+	m, err := a.store.GetModel(ctx, rules.Classifier.ModelID)
+	if errors.Is(err, store.ErrNotFound) {
+		return fmt.Errorf("classifier model %d does not exist", rules.Classifier.ModelID)
+	}
+	if err != nil {
+		return err
+	}
+	if !m.Enabled {
+		return fmt.Errorf("classifier model %s is disabled", m.ModelID)
+	}
+	p, err := a.store.GetProvider(ctx, m.ProviderID)
+	if err != nil {
+		return err
+	}
+	if provider.Type(p.Type) == provider.AnthropicSubscription {
+		return errors.New("the classifier cannot use a subscription provider, because the gateway makes that call itself")
+	}
+	return nil
+}
+
+// routesUsingModel lists routes that use the model as a tier or as their classifier.
+func (a *API) routesUsingModel(ctx context.Context, modelID int64) ([]string, error) {
+	names, err := a.store.RoutesUsingModel(ctx, modelID)
+	if err != nil {
+		return nil, err
+	}
+	routes, err := a.store.ListRoutes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, rt := range routes {
+		if rt.Strategy != store.StrategyEscalate || slices.Contains(names, rt.Name) {
+			continue
+		}
+		if rules, err := escalate.ParseRules(rt.Settings); err == nil && rules.Classifier.Enabled && rules.Classifier.ModelID == modelID {
+			names = append(names, rt.Name)
+		}
+	}
+	return names, nil
 }
 
 // defaultLabel turns "deepseek/DeepSeek-V4-Pro" into "deepseek-v4-pro".

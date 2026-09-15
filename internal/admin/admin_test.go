@@ -163,6 +163,23 @@ func TestProviderModelRouteFlow(t *testing.T) {
 		t.Fatalf("subscription models = %+v", subModels)
 	}
 	c.do("GET", "/api/admin/subscription/limits", nil, http.StatusOK)
+
+	var subOpus int64
+	for _, m := range subModels {
+		if m.ModelID == "claude-opus-5" {
+			subOpus = m.ID
+		}
+	}
+	c.do("PATCH", fmt.Sprintf("/api/admin/models/%d", subOpus), map[string]any{"enabled": true}, http.StatusOK)
+	escalateRoute := func(name string, classifier int64) map[string]any {
+		return map[string]any{
+			"name": name, "strategy": "escalate",
+			"tiers":    []map[string]any{{"model_id": haiku.ID}, {"model_id": subOpus}},
+			"settings": map[string]any{"classifier": map[string]any{"enabled": true, "model_id": classifier}},
+		}
+	}
+	c.do("POST", "/api/admin/routes", escalateRoute("sub-classifier", subOpus), http.StatusBadRequest)
+	c.do("POST", "/api/admin/routes", escalateRoute("haiku-classifier", haiku.ID), http.StatusCreated)
 }
 
 func TestMutationsRequireJSON(t *testing.T) {

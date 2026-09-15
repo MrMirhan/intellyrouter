@@ -293,7 +293,7 @@ func (a *API) updateModel(w http.ResponseWriter, r *http.Request) {
 	wasEnabled := m.Enabled
 	in.apply(&m)
 	if wasEnabled && !m.Enabled {
-		routes, err := a.store.RoutesUsingModel(r.Context(), m.ID)
+		routes, err := a.routesUsingModel(r.Context(), m.ID)
 		if err != nil {
 			a.fail(w, err)
 			return

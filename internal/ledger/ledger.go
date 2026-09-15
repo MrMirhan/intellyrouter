@@ -9,8 +9,10 @@ import (
 )
 
 const (
-	RoleDirect   = "direct"
-	RoleExecutor = "executor"
+	RoleDirect     = "direct"
+	RoleExecutor   = "executor"
+	RoleEscalation = "escalation"
+	RoleClassifier = "classifier"
 )
 
 const (

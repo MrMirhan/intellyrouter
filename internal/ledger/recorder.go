@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"intellyrouter/internal/store"
@@ -21,7 +22,9 @@ type Leg struct {
 	Status     string
 	HTTPStatus int
 	StopReason string
-	Error      string
+	// Note explains a routing decision; Error describes a failure.
+	Note  string
+	Error string
 }
 
 // Entry is one client request and the upstream calls made for it.
@@ -37,6 +40,8 @@ type Entry struct {
 	HTTPStatus  int
 	Error       string
 	Legs        []Leg
+	// Reference prices the savings estimate; nil uses the reference model setting.
+	Reference *Price
 }
 
 func (e *Entry) Finish(status string, httpStatus int, err string) {
@@ -56,9 +61,13 @@ func NewRecorder(st *store.Store, log *slog.Logger) *Recorder {
 // the subscription value, and API-billed base legs add what the same tokens
 // would have cost on the reference model.
 func (r *Recorder) Record(ctx context.Context, e Entry) {
-	ref, err := r.referencePrice(ctx)
-	if err != nil {
+	var ref Price
+	if e.Reference != nil {
+		ref = *e.Reference
+	} else if p, err := r.referencePrice(ctx); err != nil {
 		r.log.Warn("reference price unavailable", "err", err)
+	} else {
+		ref = p
 	}
 	req := store.Request{
 		TS:          e.Started.UnixMilli(),
@@ -100,7 +109,7 @@ func (r *Recorder) Record(ctx context.Context, e Entry) {
 			LatencyMS:        l.Latency.Milliseconds(),
 			Status:           l.Status,
 			StopReason:       l.StopReason,
-			Note:             l.Error,
+			Note:             strings.TrimPrefix(l.Note+"; "+l.Error, "; "),
 		})
 	}
 	if _, err := r.store.InsertRequest(ctx, req); err != nil {

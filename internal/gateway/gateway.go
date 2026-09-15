@@ -6,20 +6,26 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
+	"intellyrouter/internal/escalate"
 	"intellyrouter/internal/ledger"
 	"intellyrouter/internal/store"
 )
 
 type Server struct {
-	store  *store.Store
-	ledger *ledger.Recorder
-	client *http.Client
-	log    *slog.Logger
+	store   *store.Store
+	ledger  *ledger.Recorder
+	client  *http.Client
+	log     *slog.Logger
+	decider *escalate.Decider
 }
 
+// A turn decision outlives any realistic tool loop.
+const turnTTL = 6 * time.Hour
+
 func New(st *store.Store, rec *ledger.Recorder, client *http.Client, log *slog.Logger) *Server {
-	return &Server{store: st, ledger: rec, client: client, log: log}
+	return &Server{store: st, ledger: rec, client: client, log: log, decider: escalate.NewDecider(turnTTL)}
 }
 
 func (s *Server) Register(mux *http.ServeMux) {
