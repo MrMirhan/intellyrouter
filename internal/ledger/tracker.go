@@ -15,16 +15,19 @@ type AnthropicTracker struct {
 	StopReason string
 	Error      string
 	Capture    bool
+	// Advisors lists advisor model calls, which the top-level usage leaves out.
+	Advisors []AdvisorUsage
 
 	stream *messageBuilder
 	body   []byte
 }
 
 type anthropicUsage struct {
-	InputTokens              *int64 `json:"input_tokens"`
-	OutputTokens             *int64 `json:"output_tokens"`
-	CacheCreationInputTokens *int64 `json:"cache_creation_input_tokens"`
-	CacheReadInputTokens     *int64 `json:"cache_read_input_tokens"`
+	InputTokens              *int64           `json:"input_tokens"`
+	OutputTokens             *int64           `json:"output_tokens"`
+	CacheCreationInputTokens *int64           `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     *int64           `json:"cache_read_input_tokens"`
+	Iterations               []usageIteration `json:"iterations"`
 }
 
 // applyTo overwrites the counters present in u; message_delta usage is cumulative.
@@ -84,6 +87,7 @@ func (t *AnthropicTracker) Event(name string, data []byte) {
 		}
 		if json.Unmarshal(data, &ev) == nil {
 			ev.Usage.applyTo(&t.Usage)
+			t.applyIterations(ev.Usage.Iterations)
 			if ev.Delta.StopReason != "" {
 				t.StopReason = ev.Delta.StopReason
 			}
@@ -116,6 +120,7 @@ func (t *AnthropicTracker) Response(status int, body []byte) {
 	}
 	if json.Unmarshal(body, &m) == nil {
 		m.Usage.applyTo(&t.Usage)
+		t.applyIterations(m.Usage.Iterations)
 		t.StopReason = m.StopReason
 	}
 }
@@ -292,4 +297,37 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+// usageIteration is one model call inside a response. With the advisor tool,
+// Anthropic also calls the advisor model and reports it only here.
+type usageIteration struct {
+	Type                     string `json:"type"`
+	Model                    string `json:"model"`
+	InputTokens              int64  `json:"input_tokens"`
+	OutputTokens             int64  `json:"output_tokens"`
+	CacheCreationInputTokens int64  `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     int64  `json:"cache_read_input_tokens"`
+}
+
+// AdvisorUsage is the usage of one advisor model call.
+type AdvisorUsage struct {
+	Model string
+	Usage Usage
+}
+
+// applyIterations keeps the advisor calls of the latest usage, which is cumulative.
+func (t *AnthropicTracker) applyIterations(iterations []usageIteration) {
+	if len(iterations) == 0 {
+		return
+	}
+	t.Advisors = t.Advisors[:0]
+	for _, it := range iterations {
+		if it.Type != "advisor_message" {
+			continue
+		}
+		t.Advisors = append(t.Advisors, AdvisorUsage{Model: it.Model, Usage: Usage{
+			Input: it.InputTokens, Output: it.OutputTokens, CacheRead: it.CacheReadInputTokens, CacheWrite: it.CacheCreationInputTokens,
+		}})
+	}
 }

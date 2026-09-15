@@ -125,7 +125,7 @@ export interface CreatedGatewayKey extends GatewayKey {
 
 export type RequestStatus = "ok" | "upstream_error" | "error" | "canceled"
 
-export type LegRole = "direct" | "executor" | "escalation" | "classifier" | "director"
+export type LegRole = "direct" | "executor" | "escalation" | "classifier" | "director" | "advisor"
 
 export type Billing = "api" | "subscription"
 

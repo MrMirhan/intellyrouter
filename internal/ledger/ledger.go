@@ -14,6 +14,8 @@ const (
 	RoleEscalation = "escalation"
 	RoleClassifier = "classifier"
 	RoleDirector   = "director"
+	// RoleAdvisor is an advisor model call that Anthropic ran inside another call.
+	RoleAdvisor = "advisor"
 )
 
 const (

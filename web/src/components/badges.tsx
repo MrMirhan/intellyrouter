@@ -67,11 +67,12 @@ const roleLabels: Record<LegRole, string> = {
   escalation: "Escalation",
   classifier: "Classifier",
   director: "Director",
+  advisor: "Advisor",
 }
 
 export function RoleBadge({ role }: { role: LegRole }) {
   const variant =
-    role === "escalation" || role === "director" ? "default" : role === "classifier" ? "secondary" : "outline"
+    role === "escalation" || role === "director" || role === "advisor" ? "default" : role === "classifier" ? "secondary" : "outline"
   return <Badge variant={variant}>{roleLabels[role] ?? role}</Badge>
 }
 

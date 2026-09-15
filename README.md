@@ -124,18 +124,19 @@ At a checkpoint, the gateway sends the director a text copy of the session: the 
 
 | Checkpoint | When it occurs |
 | --- | --- |
-| `turn_start` | You send a new prompt. |
+| `turn_start` | You send a new prompt. Skill content, local command output (such as `/model`), and hook feedback are not prompts. |
 | `failed_results` | The session has this number of new failed tool results since the last check. |
+| `repeats` | The executor makes the same tool call with the same result this number of times. |
 | `unsure` | The executor writes that it is stuck or not sure. |
-| `review_on_success` | Files changed and the latest tool results pass. The director approves the work or lists what to fix. |
-| `steps` | The executor made this number of steps since the last check. |
+| `review_on_success` | Files changed and the latest test, lint, or check command passes. The director approves the work or lists what to fix. |
+| `steps` | The executor made this number of steps since the last check. Off by default: the other checkpoints cover long work at a lower cost. |
 
 Only one checkpoint occurs for each executor step. The route settings:
 
 ```json
 {
   "director": { "model_id": 2, "effort": "medium", "max_calls_per_turn": 6 },
-  "checkpoints": { "turn_start": true, "failed_results": 2, "steps": 15, "unsure": true, "review_on_success": true },
+  "checkpoints": { "turn_start": true, "failed_results": 2, "repeats": 3, "unsure": true, "review_on_success": true, "steps": 0 },
   "escalate_after": 2,
   "consult": true
 }
@@ -156,10 +157,26 @@ With `"consult": true` (the default), the executor gets one more tool, `ask_dire
 - A question uses one director call of `max_calls_per_turn`. One request can have at most 3 questions.
 - If the executor calls `ask_director` together with other tools, Claude Code runs the other tools. The answer goes to the executor as guidance in the next request.
 
+### Claude Code advisor
+
+When the executors run on your Claude subscription, the gateway cannot add a tool to their requests. Claude Code has its own advisor tool for the same purpose: the model asks Claude Fable 5.1 when it is stuck or before a large change, and Anthropic runs the advisor on your plan. Turn on "Advisor" in the connect snippet, or set these values yourself:
+
+```json
+{
+  "advisorModel": "claude-fable-5-1",
+  "env": { "CLAUDE_CODE_ENABLE_EXPERIMENTAL_ADVISOR_TOOL": "1" }
+}
+```
+
+- Claude Code does not know route names, so it cannot check the advisor pairing. Use Fable 5.1, because every Claude model accepts it as an advisor.
+- Use the advisor only on routes whose models are all Claude models. Other providers reject the advisor tool.
+- Advisor calls use your plan limits. The advisor tool is experimental in Claude Code.
+
 ## Costs and savings
 
 - **API spend**: the cost of all calls that your providers bill.
 - **Subscription value**: Claude subscription usage at API prices. It costs you nothing extra, but it uses your plan limits. The dashboard also shows the latest rate-limit headers from Anthropic.
+- **Routing vs one model**: the Overview and each session price the work tokens (all calls except classifier and director checkpoint calls) at one model, for example Claude Fable 5.1, and compare that with what the routing actually used (API spend plus subscription value). A single model would use a different number of tokens and turns, so this value is an estimate.
 - **Estimated savings**: the cost of the base-tier tokens at the price of the route's top model (the director model for guided routes, or the reference model for direct routes), minus the API spend. Classifier and director calls show as routing overhead. Different models use different numbers of tokens and turns, so this value is an estimate. Use the eval runner for a measured comparison.
 
 ## Eval
@@ -187,11 +204,23 @@ Without `-yes`, the command prints the plan and stops.
 
 > **Warning:** Each run lets a model edit files and run `go` or `python3` commands on this computer, in a temporary copy of the task. API calls cost money, and subscription mode uses your plan limits.
 
+## Sessions and content capture
+
+The Sessions page groups requests by the Claude Code session ID. A session shows which models did the work, the director checkpoints, the token use, and the comparison with one model.
+
+By default the gateway stores only request metadata: models, tokens, costs, latency, and notes. To keep the prompts and responses too, turn on content capture in Settings. Then each request shows the messages that Claude Code sent, the response, and the text that the gateway added (director guidance and checkpoint prompts), and you can export a request as JSON or a session as JSONL.
+
+- Claude Code sends the full conversation in every request. The gateway stores each message one time and reuses it, so a long session does not store the same history again for each request.
+- The gateway deletes captured content after the retention period (default 14 days). The request metadata stays.
+
+> **Warning:** Content capture stores prompts, code, tool output, and responses in the database in the data directory, without encryption. Keep it off for sensitive work, and protect the data directory.
+
 ## Security
 
 - The gateway listens on `127.0.0.1` by default. It has no TLS. If you use a different address, put a TLS proxy in front of it.
 - Provider API keys are encrypted with AES-256-GCM. The master key is in `<data>/master.key` (file mode 0600), or in the `INTELLY_MASTER_KEY` environment variable as base64.
 - The database stores only SHA-256 hashes of gateway keys and the admin token.
+- Content capture is off by default. When it is on, the database also stores prompts and responses without encryption.
 - The dashboard uses an HttpOnly, SameSite=Strict session cookie and a strict Content Security Policy. Admin API calls that change data must use `Content-Type: application/json`.
 
 ## Known limits

@@ -76,10 +76,10 @@ type WorkTotals struct {
 const (
 	legTokens = `(l.input_tokens + l.output_tokens + l.cache_read_tokens + l.cache_write_tokens)`
 	// API tokens exclude classifier and director calls, which are routing overhead, not work.
-	apiTokens          = `COALESCE(SUM(CASE WHEN l.billing = 'api' AND l.role NOT IN ('classifier', 'director') THEN ` + legTokens + ` END), 0)`
+	apiTokens          = `COALESCE(SUM(CASE WHEN l.billing = 'api' AND l.role NOT IN ('classifier', 'director', 'advisor') THEN ` + legTokens + ` END), 0)`
 	subscriptionTokens = `COALESCE(SUM(CASE WHEN l.billing = 'subscription' THEN ` + legTokens + ` END), 0)`
 	// A subscription director leg is a Claude Code step; an API director leg is a consult the gateway made.
-	workLeg = `l.role != 'classifier' AND NOT (l.role = 'director' AND l.billing = 'api')`
+	workLeg = `l.role NOT IN ('classifier', 'advisor') AND NOT (l.role = 'director' AND l.billing = 'api')`
 )
 
 // Stats aggregates requests with ts >= since (Unix ms) into buckets of bucketMS.

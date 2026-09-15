@@ -81,6 +81,7 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, t target, body 
 		s.saveRateLimits(context.WithoutCancel(r.Context()), resp.Header)
 	}
 	leg.Usage, leg.StopReason, leg.HTTPStatus = tr.Usage, tr.StopReason, resp.StatusCode
+	leg.Advisors = tr.Advisors
 	leg.Output = tr.Message()
 	switch {
 	case relayErr != nil && r.Context().Err() != nil:

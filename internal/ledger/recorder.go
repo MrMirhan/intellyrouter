@@ -31,6 +31,8 @@ type Leg struct {
 	// capture is on.
 	Input  string
 	Output []byte
+	// Advisors are advisor model calls inside this call's response.
+	Advisors []AdvisorUsage
 }
 
 // Entry is one client request and the upstream calls made for it.
@@ -92,7 +94,7 @@ func (r *Recorder) Record(ctx context.Context, e Entry) {
 		LatencyMS:   time.Since(e.Started).Milliseconds(),
 	}
 	content := store.Content{CreatedAt: req.TS, Input: e.Input}
-	for i, l := range e.Legs {
+	for _, l := range e.Legs {
 		if l.Billing == "" {
 			l.Billing = BillingAPI
 		}
@@ -105,8 +107,9 @@ func (r *Recorder) Record(ctx context.Context, e Entry) {
 				req.ReferenceCostUSD += ref.Cost(l.Usage)
 			}
 		}
+		seq := len(req.Legs)
 		req.Legs = append(req.Legs, store.Leg{
-			Seq:              i,
+			Seq:              seq,
 			Role:             l.Role,
 			Provider:         l.Provider,
 			Model:            l.Model,
@@ -122,7 +125,21 @@ func (r *Recorder) Record(ctx context.Context, e Entry) {
 			Note:             strings.Join(slices.DeleteFunc([]string{l.Note, l.Error}, func(s string) bool { return s == "" }), "; "),
 		})
 		if l.Input != "" || len(l.Output) > 0 {
-			content.Legs = append(content.Legs, store.LegContent{Seq: i, Input: l.Input, Output: l.Output})
+			content.Legs = append(content.Legs, store.LegContent{Seq: seq, Input: l.Input, Output: l.Output})
+		}
+		for _, a := range l.Advisors {
+			price, _ := BuiltinPrice(a.Model)
+			advisorCost := price.Cost(a.Usage)
+			if l.Billing == BillingSubscription {
+				req.SubscriptionValueUSD += advisorCost
+			} else {
+				req.CostUSD += advisorCost
+			}
+			req.Legs = append(req.Legs, store.Leg{
+				Seq: len(req.Legs), Role: RoleAdvisor, Provider: l.Provider, Model: a.Model, Billing: l.Billing,
+				InputTokens: a.Usage.Input, OutputTokens: a.Usage.Output, CacheReadTokens: a.Usage.CacheRead, CacheWriteTokens: a.Usage.CacheWrite,
+				CostUSD: advisorCost, Status: StatusOK, Note: "advisor for " + l.Model,
+			})
 		}
 	}
 	id, err := r.store.InsertRequest(ctx, req)

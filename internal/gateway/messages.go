@@ -129,6 +129,9 @@ func (s *Server) call(w http.ResponseWriter, r *http.Request, t target, cr clien
 	if err != nil {
 		return fail(http.StatusBadRequest, "invalid_request_error", "invalid request body: "+err.Error())
 	}
+	if upstream, err = dropAdvisorTools(t, upstream); err != nil {
+		return fail(http.StatusBadRequest, "invalid_request_error", "invalid request body: "+err.Error())
+	}
 	return s.forward(w, r, t, upstream, cr.claudeAuth, cr.capture)
 }
 
@@ -168,6 +171,10 @@ func (s *Server) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	}
 	upstream, err := withModel(body, t.model.ModelID)
 	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request_error", "invalid request body: "+err.Error())
+		return
+	}
+	if upstream, err = dropAdvisorTools(t, upstream); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request_error", "invalid request body: "+err.Error())
 		return
 	}
