@@ -21,7 +21,7 @@ const pingInterval = 15 * time.Second
 // forwardOpenAI translates the request for a Chat Completions upstream and the
 // response back to Anthropic format. It writes the client response in every case.
 func (s *Server) forwardOpenAI(w http.ResponseWriter, r *http.Request, t target, body []byte, stream bool) ledger.Leg {
-	leg := ledger.Leg{Provider: t.provider.Name, Model: t.model.ModelID, Price: t.price()}
+	leg := t.newLeg()
 	start := time.Now()
 	done := func(status string, httpStatus int, msg string) ledger.Leg {
 		leg.Latency = time.Since(start)

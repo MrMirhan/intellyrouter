@@ -24,6 +24,16 @@ type RemoteModel struct {
 func ListModels(ctx context.Context, client *http.Client, c Config) ([]RemoteModel, error) {
 	base := c.baseURL()
 	switch c.Type {
+	case AnthropicSubscription:
+		// No credential is stored to list models with; offer the known Claude models.
+		ids := ledger.BuiltinModelIDs()
+		out := make([]RemoteModel, 0, len(ids))
+		for _, id := range ids {
+			p, _ := ledger.BuiltinPrice(id)
+			out = append(out, RemoteModel{ID: id, DisplayName: id, Price: p})
+		}
+		return out, nil
+
 	case Anthropic, AnthropicCompatible:
 		var body struct {
 			Data []struct {

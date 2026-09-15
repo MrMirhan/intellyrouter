@@ -58,13 +58,14 @@ CREATE TABLE requests (
   agent_id TEXT NOT NULL DEFAULT '',
   route TEXT NOT NULL,
   strategy TEXT NOT NULL,
-  auth_mode TEXT NOT NULL,
   client_model TEXT NOT NULL,
   stream INTEGER NOT NULL,
   status TEXT NOT NULL,
   http_status INTEGER NOT NULL,
   error TEXT NOT NULL DEFAULT '',
+  -- API spend; subscription legs are excluded and valued separately.
   cost_usd REAL NOT NULL DEFAULT 0,
+  subscription_value_usd REAL NOT NULL DEFAULT 0,
   reference_cost_usd REAL NOT NULL DEFAULT 0,
   latency_ms INTEGER NOT NULL DEFAULT 0
 );
@@ -79,6 +80,8 @@ CREATE TABLE legs (
   role TEXT NOT NULL,
   provider TEXT NOT NULL,
   model TEXT NOT NULL,
+  -- 'api' or 'subscription'; cost_usd is the API-equivalent price either way.
+  billing TEXT NOT NULL DEFAULT 'api',
   input_tokens INTEGER NOT NULL DEFAULT 0,
   output_tokens INTEGER NOT NULL DEFAULT 0,
   cache_read_tokens INTEGER NOT NULL DEFAULT 0,

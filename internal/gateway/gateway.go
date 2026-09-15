@@ -32,37 +32,43 @@ func (s *Server) Register(mux *http.ServeMux) {
 
 const keyHeader = "X-Intelly-Key"
 
-// clientKey extracts the gateway key. x-intelly-key wins so that a Claude
-// subscription token can stay in Authorization.
-func clientKey(h http.Header) string {
+// clientKey extracts the gateway key and reports whether it came from
+// Authorization. x-intelly-key wins so that a Claude login can stay in Authorization.
+func clientKey(h http.Header) (key string, fromAuthorization bool) {
 	if k := h.Get(keyHeader); k != "" {
-		return k
+		return k, false
 	}
 	if k := h.Get("X-Api-Key"); k != "" {
-		return k
+		return k, false
 	}
 	if a := h.Get("Authorization"); strings.HasPrefix(a, "Bearer ") {
-		return strings.TrimPrefix(a, "Bearer ")
+		return strings.TrimPrefix(a, "Bearer "), true
 	}
-	return ""
+	return "", false
 }
 
-func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) bool {
-	key := clientKey(r.Header)
+// authenticate verifies the gateway key. When Authorization did not carry the
+// gateway key, its value is returned as the client's Claude login, which only
+// subscription routes pass through.
+func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) (claudeAuth string, ok bool) {
+	key, fromAuthorization := clientKey(r.Header)
 	if key == "" {
 		writeError(w, http.StatusUnauthorized, "authentication_error", "missing gateway key")
-		return false
+		return "", false
 	}
-	_, ok, err := s.store.VerifyGatewayKey(r.Context(), key)
+	_, valid, err := s.store.VerifyGatewayKey(r.Context(), key)
 	if err != nil {
 		s.internalError(w, "verify gateway key", err)
-		return false
+		return "", false
 	}
-	if !ok {
+	if !valid {
 		writeError(w, http.StatusUnauthorized, "authentication_error", "invalid gateway key")
-		return false
+		return "", false
 	}
-	return true
+	if fromAuthorization {
+		return "", true
+	}
+	return r.Header.Get("Authorization"), true
 }
 
 type errorDetail struct {

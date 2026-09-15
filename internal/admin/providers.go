@@ -51,7 +51,9 @@ func (in providerInput) apply(p *store.Provider) {
 	}
 }
 
-func validateProvider(p store.Provider) error {
+// validateProvider checks the provider and clears any key sent for a
+// subscription provider, which must never store a credential.
+func validateProvider(p *store.Provider) error {
 	t := provider.Type(p.Type)
 	switch {
 	case !t.Valid():
@@ -60,8 +62,11 @@ func validateProvider(p store.Provider) error {
 		return errors.New("name is required")
 	case t.NeedsBaseURL() && p.BaseURL == "":
 		return fmt.Errorf("%s providers need a base_url", p.Type)
-	case p.APIKey == "" && t != provider.OpenAICompatible:
+	case t.NeedsKey() && p.APIKey == "":
 		return errors.New("api_key is required")
+	}
+	if t == provider.AnthropicSubscription {
+		p.APIKey = ""
 	}
 	return nil
 }
@@ -86,7 +91,7 @@ func (a *API) createProvider(w http.ResponseWriter, r *http.Request) {
 	}
 	p := store.Provider{Enabled: true}
 	in.apply(&p)
-	if err := validateProvider(p); err != nil {
+	if err := validateProvider(&p); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -108,7 +113,7 @@ func (a *API) updateProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in.apply(&p)
-	if err := validateProvider(p); err != nil {
+	if err := validateProvider(&p); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

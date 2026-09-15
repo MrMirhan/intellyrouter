@@ -179,14 +179,14 @@ func TestRequestLedger(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()
 	id, err := s.InsertRequest(ctx, Request{
-		TS: 1, Route: "r", Strategy: StrategyDirect, AuthMode: "key", ClientModel: "r", Status: "ok", HTTPStatus: 200, CostUSD: 0.5,
-		Legs: []Leg{{Role: "direct", Provider: "p", Model: "m", InputTokens: 10, Status: "ok"}},
+		TS: 1, Route: "r", Strategy: StrategyDirect, ClientModel: "r", Status: "ok", HTTPStatus: 200, CostUSD: 0.5,
+		Legs: []Leg{{Role: "direct", Provider: "p", Model: "m", Billing: "subscription", InputTokens: 10, Status: "ok"}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.GetRequest(ctx, id)
-	if err != nil || len(got.Legs) != 1 || got.Legs[0].InputTokens != 10 || got.CostUSD != 0.5 {
+	if err != nil || len(got.Legs) != 1 || got.Legs[0].InputTokens != 10 || got.Legs[0].Billing != "subscription" || got.CostUSD != 0.5 {
 		t.Fatalf("GetRequest = %+v, %v", got, err)
 	}
 	items, total, err := s.ListRequests(ctx, RequestFilter{Route: "r"})

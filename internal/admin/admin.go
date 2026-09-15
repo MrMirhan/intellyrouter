@@ -56,6 +56,8 @@ func (a *API) Register(mux *http.ServeMux) {
 		{"GET /api/admin/requests", a.listRequests},
 		{"GET /api/admin/requests/{id}", a.getRequest},
 
+		{"GET /api/admin/subscription/limits", a.getSubscriptionLimits},
+
 		{"GET /api/admin/settings", a.getSettings},
 		{"PUT /api/admin/settings", a.putSettings},
 	} {

@@ -1,14 +1,18 @@
 package gateway
 
 import (
+	"context"
+	"encoding/json"
 	"io"
 	"mime"
 	"net/http"
+	"strings"
 	"time"
 
 	"intellyrouter/internal/ledger"
 	"intellyrouter/internal/provider"
 	"intellyrouter/internal/sse"
+	"intellyrouter/internal/store"
 )
 
 const maxResponseBytes = 64 << 20
@@ -29,10 +33,10 @@ var skipResponseHeaders = map[string]bool{
 
 // forward sends body to an Anthropic-format upstream and relays the response
 // to the client. It writes the client response in every case.
-func (s *Server) forward(w http.ResponseWriter, r *http.Request, t target, body []byte) ledger.Leg {
-	leg := ledger.Leg{Provider: t.provider.Name, Model: t.model.ModelID, Price: t.price()}
+func (s *Server) forward(w http.ResponseWriter, r *http.Request, t target, body []byte, claudeAuth string) ledger.Leg {
+	leg := t.newLeg()
 	start := time.Now()
-	req, err := provider.NewAnthropicRequest(r.Context(), t.config, r.URL.Path, r.URL.RawQuery, body, r.Header)
+	req, err := provider.NewAnthropicRequest(r.Context(), t.config, r.URL.Path, r.URL.RawQuery, body, r.Header, claudeAuth)
 	if err != nil {
 		leg.Status, leg.HTTPStatus, leg.Error = ledger.StatusError, http.StatusInternalServerError, err.Error()
 		s.internalError(w, "build upstream request", err)
@@ -54,6 +58,9 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, t target, body 
 	var tr ledger.AnthropicTracker
 	relayErr := relay(w, resp, &tr)
 	leg.Latency = time.Since(start)
+	if t.config.Type == provider.AnthropicSubscription {
+		s.saveRateLimits(context.WithoutCancel(r.Context()), resp.Header)
+	}
 	leg.Usage, leg.StopReason, leg.HTTPStatus = tr.Usage, tr.StopReason, resp.StatusCode
 	switch {
 	case relayErr != nil && r.Context().Err() != nil:
@@ -97,6 +104,29 @@ func relay(w http.ResponseWriter, resp *http.Response, tr *ledger.AnthropicTrack
 	tr.Response(resp.StatusCode, b)
 	_, err = w.Write(b)
 	return err
+}
+
+// saveRateLimits keeps the latest subscription rate-limit headers for the dashboard.
+func (s *Server) saveRateLimits(ctx context.Context, h http.Header) {
+	limits := make(map[string]string)
+	for name, values := range h {
+		if lower := strings.ToLower(name); strings.HasPrefix(lower, "anthropic-ratelimit-") && len(values) > 0 {
+			limits[lower] = values[0]
+		}
+	}
+	if len(limits) == 0 {
+		return
+	}
+	b, err := json.Marshal(struct {
+		CapturedAt int64             `json:"captured_at"`
+		Headers    map[string]string `json:"headers"`
+	}{time.Now().UnixMilli(), limits})
+	if err == nil {
+		err = s.store.SetSetting(ctx, store.SubscriptionLimitsSetting, string(b))
+	}
+	if err != nil {
+		s.log.Warn("save subscription rate limits", "err", err)
+	}
 }
 
 func isEventStream(h http.Header) bool {

@@ -146,6 +146,23 @@ func TestProviderModelRouteFlow(t *testing.T) {
 	if !strings.HasPrefix(key.Key, "ik_") {
 		t.Fatalf("gateway key = %q", key.Key)
 	}
+
+	sub := decodeInto[struct {
+		ID     int64 `json:"id"`
+		HasKey bool  `json:"has_key"`
+	}](t, c.do("POST", "/api/admin/providers", map[string]any{"type": "anthropic-subscription", "name": "claude-login", "api_key": "must-be-dropped"}, http.StatusCreated))
+	if sub.HasKey {
+		t.Fatal("subscription provider stored an api key")
+	}
+	subModels := decodeInto[[]model](t, c.do("POST", fmt.Sprintf("/api/admin/providers/%d/sync-models", sub.ID), nil, http.StatusOK))
+	found := false
+	for _, m := range subModels {
+		found = found || (m.ModelID == "claude-opus-5" && m.PriceIn == 5)
+	}
+	if !found {
+		t.Fatalf("subscription models = %+v", subModels)
+	}
+	c.do("GET", "/api/admin/subscription/limits", nil, http.StatusOK)
 }
 
 func TestMutationsRequireJSON(t *testing.T) {

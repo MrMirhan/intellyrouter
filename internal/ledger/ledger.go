@@ -2,7 +2,9 @@
 package ledger
 
 import (
+	"maps"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -18,7 +20,10 @@ const (
 	StatusCanceled      = "canceled"
 )
 
-const AuthKey = "key"
+const (
+	BillingAPI          = "api"
+	BillingSubscription = "subscription"
+)
 
 const (
 	ReferenceModelSetting = "reference_model"
@@ -61,6 +66,11 @@ var builtinPrices = map[string]Price{
 	"claude-sonnet-4-5": {In: 3, Out: 15, CacheRead: 0.3, CacheWrite: 3.75},
 	"claude-sonnet-4":   {In: 3, Out: 15, CacheRead: 0.3, CacheWrite: 3.75},
 	"claude-haiku-4-5":  {In: 1, Out: 5, CacheRead: 0.1, CacheWrite: 1.25},
+}
+
+// BuiltinModelIDs lists the Claude models with known prices, sorted.
+func BuiltinModelIDs() []string {
+	return slices.Sorted(maps.Keys(builtinPrices))
 }
 
 var dateSuffix = regexp.MustCompile(`-\d{8}$`)

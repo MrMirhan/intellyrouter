@@ -17,9 +17,18 @@ import (
 
 const maxBodyBytes = 64 << 20
 
+const errNoClaudeLogin = "this route uses a Claude subscription: log in with /login in Claude Code and send the gateway key in the x-intelly-key header"
+
 type requestMeta struct {
 	Model  string `json:"model"`
 	Stream bool   `json:"stream"`
+}
+
+// clientRequest is an authenticated, parsed /v1/messages call.
+type clientRequest struct {
+	body       []byte
+	stream     bool
+	claudeAuth string
 }
 
 var errDisabled = errors.New("model or provider is disabled")
@@ -40,14 +49,22 @@ func (t target) price() ledger.Price {
 	return p
 }
 
+func (t target) newLeg() ledger.Leg {
+	leg := ledger.Leg{Provider: t.provider.Name, Model: t.model.ModelID, Price: t.price(), Billing: ledger.BillingAPI}
+	if t.config.Type == provider.AnthropicSubscription {
+		leg.Billing = ledger.BillingSubscription
+	}
+	return leg
+}
+
 func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	e := ledger.Entry{
 		Started:   time.Now(),
 		SessionID: r.Header.Get("X-Claude-Code-Session-Id"),
 		AgentID:   r.Header.Get("X-Claude-Code-Agent-Id"),
-		AuthMode:  ledger.AuthKey,
 	}
-	if !s.authenticate(w, r) {
+	claudeAuth, ok := s.authenticate(w, r)
+	if !ok {
 		return
 	}
 	body, meta, ok := readRequest(w, r)
@@ -59,10 +76,11 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	e.Route, e.Strategy, e.ClientModel, e.Stream = route.Name, route.Strategy, meta.Model, meta.Stream
+	cr := clientRequest{body: body, stream: meta.Stream, claudeAuth: claudeAuth}
 
 	switch route.Strategy {
 	case store.StrategyDirect:
-		s.direct(w, r, route, body, meta.Stream, &e)
+		s.direct(w, r, route, cr, &e)
 	default:
 		writeError(w, http.StatusNotImplemented, "api_error", fmt.Sprintf("strategy %q is not implemented yet", route.Strategy))
 		return
@@ -70,14 +88,14 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	s.ledger.Record(context.WithoutCancel(r.Context()), e)
 }
 
-func (s *Server) direct(w http.ResponseWriter, r *http.Request, route store.Route, body []byte, stream bool, e *ledger.Entry) {
+func (s *Server) direct(w http.ResponseWriter, r *http.Request, route store.Route, cr clientRequest, e *ledger.Entry) {
 	t, err := s.resolve(r.Context(), baseModel(route))
 	if err != nil {
 		e.Finish(ledger.StatusError, http.StatusServiceUnavailable, "route model unavailable: "+err.Error())
 		writeError(w, http.StatusServiceUnavailable, "api_error", e.Error)
 		return
 	}
-	leg := s.call(w, r, t, body, stream)
+	leg := s.call(w, r, t, cr)
 	leg.Role = ledger.RoleDirect
 	e.Legs = append(e.Legs, leg)
 	e.Finish(leg.Status, leg.HTTPStatus, leg.Error)
@@ -85,17 +103,24 @@ func (s *Server) direct(w http.ResponseWriter, r *http.Request, route store.Rout
 
 // call sends the client request to one model in its provider's format and
 // relays the answer. It writes the client response in every case.
-func (s *Server) call(w http.ResponseWriter, r *http.Request, t target, body []byte, stream bool) ledger.Leg {
+func (s *Server) call(w http.ResponseWriter, r *http.Request, t target, cr clientRequest) ledger.Leg {
+	fail := func(status int, typ, msg string) ledger.Leg {
+		writeError(w, status, typ, msg)
+		leg := t.newLeg()
+		leg.Status, leg.HTTPStatus, leg.Error = ledger.StatusError, status, msg
+		return leg
+	}
+	if t.config.Type == provider.AnthropicSubscription && cr.claudeAuth == "" {
+		return fail(http.StatusUnauthorized, "authentication_error", errNoClaudeLogin)
+	}
 	if t.config.Type.Format() == provider.FormatOpenAI {
-		return s.forwardOpenAI(w, r, t, body, stream)
+		return s.forwardOpenAI(w, r, t, cr.body, cr.stream)
 	}
-	upstream, err := withModel(body, t.model.ModelID)
+	upstream, err := withModel(cr.body, t.model.ModelID)
 	if err != nil {
-		msg := "invalid request body: " + err.Error()
-		writeError(w, http.StatusBadRequest, "invalid_request_error", msg)
-		return ledger.Leg{Provider: t.provider.Name, Model: t.model.ModelID, Status: ledger.StatusError, HTTPStatus: http.StatusBadRequest, Error: msg}
+		return fail(http.StatusBadRequest, "invalid_request_error", "invalid request body: "+err.Error())
 	}
-	return s.forward(w, r, t, upstream)
+	return s.forward(w, r, t, upstream, cr.claudeAuth)
 }
 
 func baseModel(r store.Route) int64 {
@@ -106,7 +131,8 @@ func baseModel(r store.Route) int64 {
 }
 
 func (s *Server) handleCountTokens(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(w, r) {
+	claudeAuth, ok := s.authenticate(w, r)
+	if !ok {
 		return
 	}
 	body, meta, ok := readRequest(w, r)
@@ -127,12 +153,16 @@ func (s *Server) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found_error", "token counting is not available for this route")
 		return
 	}
+	if t.config.Type == provider.AnthropicSubscription && claudeAuth == "" {
+		writeError(w, http.StatusUnauthorized, "authentication_error", errNoClaudeLogin)
+		return
+	}
 	upstream, err := withModel(body, t.model.ModelID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request_error", "invalid request body: "+err.Error())
 		return
 	}
-	s.forward(w, r, t, upstream)
+	s.forward(w, r, t, upstream, claudeAuth)
 }
 
 func readRequest(w http.ResponseWriter, r *http.Request) ([]byte, requestMeta, bool) {
@@ -191,7 +221,7 @@ func withModel(body []byte, model string) ([]byte, error) {
 }
 
 func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(w, r) {
+	if _, ok := s.authenticate(w, r); !ok {
 		return
 	}
 	routes, err := s.store.ListRoutes(r.Context())

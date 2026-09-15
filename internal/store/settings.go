@@ -6,6 +6,10 @@ import (
 	"errors"
 )
 
+// SubscriptionLimitsSetting holds the latest anthropic-ratelimit-* headers
+// seen on a subscription response, as JSON.
+const SubscriptionLimitsSetting = "subscription_rate_limits"
+
 func (s *Store) Setting(ctx context.Context, key string) (string, bool, error) {
 	var v string
 	err := s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)

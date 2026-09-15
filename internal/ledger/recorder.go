@@ -14,6 +14,7 @@ type Leg struct {
 	Role       string
 	Provider   string
 	Model      string
+	Billing    string
 	Usage      Usage
 	Price      Price
 	Latency    time.Duration
@@ -30,7 +31,6 @@ type Entry struct {
 	AgentID     string
 	Route       string
 	Strategy    string
-	AuthMode    string
 	ClientModel string
 	Stream      bool
 	Status      string
@@ -52,8 +52,9 @@ func NewRecorder(st *store.Store, log *slog.Logger) *Recorder {
 	return &Recorder{store: st, log: log}
 }
 
-// Record stores the entry with its cost and the cost the same executor tokens
-// would have had on the reference model.
+// Record stores the entry. API legs add to the spend, subscription legs add to
+// the subscription value, and API-billed base legs add what the same tokens
+// would have cost on the reference model.
 func (r *Recorder) Record(ctx context.Context, e Entry) {
 	ref, err := r.referencePrice(ctx)
 	if err != nil {
@@ -65,7 +66,6 @@ func (r *Recorder) Record(ctx context.Context, e Entry) {
 		AgentID:     e.AgentID,
 		Route:       e.Route,
 		Strategy:    e.Strategy,
-		AuthMode:    e.AuthMode,
 		ClientModel: e.ClientModel,
 		Stream:      e.Stream,
 		Status:      e.Status,
@@ -74,16 +74,24 @@ func (r *Recorder) Record(ctx context.Context, e Entry) {
 		LatencyMS:   time.Since(e.Started).Milliseconds(),
 	}
 	for i, l := range e.Legs {
+		if l.Billing == "" {
+			l.Billing = BillingAPI
+		}
 		cost := l.Price.Cost(l.Usage)
-		req.CostUSD += cost
-		if l.Role == RoleDirect || l.Role == RoleExecutor {
-			req.ReferenceCostUSD += ref.Cost(l.Usage)
+		if l.Billing == BillingSubscription {
+			req.SubscriptionValueUSD += cost
+		} else {
+			req.CostUSD += cost
+			if l.Role == RoleDirect || l.Role == RoleExecutor {
+				req.ReferenceCostUSD += ref.Cost(l.Usage)
+			}
 		}
 		req.Legs = append(req.Legs, store.Leg{
 			Seq:              i,
 			Role:             l.Role,
 			Provider:         l.Provider,
 			Model:            l.Model,
+			Billing:          l.Billing,
 			InputTokens:      l.Usage.Input,
 			OutputTokens:     l.Usage.Output,
 			CacheReadTokens:  l.Usage.CacheRead,

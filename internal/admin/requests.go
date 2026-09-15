@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ type legJSON struct {
 	Role             string  `json:"role"`
 	Provider         string  `json:"provider"`
 	Model            string  `json:"model"`
+	Billing          string  `json:"billing"`
 	InputTokens      int64   `json:"input_tokens"`
 	OutputTokens     int64   `json:"output_tokens"`
 	CacheReadTokens  int64   `json:"cache_read_tokens"`
@@ -26,33 +28,33 @@ type legJSON struct {
 }
 
 type requestJSON struct {
-	ID               int64     `json:"id"`
-	TS               int64     `json:"ts"`
-	SessionID        string    `json:"session_id"`
-	AgentID          string    `json:"agent_id"`
-	Route            string    `json:"route"`
-	Strategy         string    `json:"strategy"`
-	AuthMode         string    `json:"auth_mode"`
-	ClientModel      string    `json:"client_model"`
-	Stream           bool      `json:"stream"`
-	Status           string    `json:"status"`
-	HTTPStatus       int       `json:"http_status"`
-	Error            string    `json:"error"`
-	CostUSD          float64   `json:"cost_usd"`
-	ReferenceCostUSD float64   `json:"reference_cost_usd"`
-	LatencyMS        int64     `json:"latency_ms"`
-	Legs             []legJSON `json:"legs,omitempty"`
+	ID                   int64     `json:"id"`
+	TS                   int64     `json:"ts"`
+	SessionID            string    `json:"session_id"`
+	AgentID              string    `json:"agent_id"`
+	Route                string    `json:"route"`
+	Strategy             string    `json:"strategy"`
+	ClientModel          string    `json:"client_model"`
+	Stream               bool      `json:"stream"`
+	Status               string    `json:"status"`
+	HTTPStatus           int       `json:"http_status"`
+	Error                string    `json:"error"`
+	CostUSD              float64   `json:"cost_usd"`
+	SubscriptionValueUSD float64   `json:"subscription_value_usd"`
+	ReferenceCostUSD     float64   `json:"reference_cost_usd"`
+	LatencyMS            int64     `json:"latency_ms"`
+	Legs                 []legJSON `json:"legs,omitempty"`
 }
 
 func toRequestJSON(r store.Request) requestJSON {
 	out := requestJSON{
 		ID: r.ID, TS: r.TS, SessionID: r.SessionID, AgentID: r.AgentID, Route: r.Route, Strategy: r.Strategy,
-		AuthMode: r.AuthMode, ClientModel: r.ClientModel, Stream: r.Stream, Status: r.Status, HTTPStatus: r.HTTPStatus,
-		Error: r.Error, CostUSD: r.CostUSD, ReferenceCostUSD: r.ReferenceCostUSD, LatencyMS: r.LatencyMS,
+		ClientModel: r.ClientModel, Stream: r.Stream, Status: r.Status, HTTPStatus: r.HTTPStatus, Error: r.Error,
+		CostUSD: r.CostUSD, SubscriptionValueUSD: r.SubscriptionValueUSD, ReferenceCostUSD: r.ReferenceCostUSD, LatencyMS: r.LatencyMS,
 	}
 	for _, l := range r.Legs {
 		out.Legs = append(out.Legs, legJSON{
-			Seq: l.Seq, Role: l.Role, Provider: l.Provider, Model: l.Model,
+			Seq: l.Seq, Role: l.Role, Provider: l.Provider, Model: l.Model, Billing: l.Billing,
 			InputTokens: l.InputTokens, OutputTokens: l.OutputTokens, CacheReadTokens: l.CacheReadTokens, CacheWriteTokens: l.CacheWriteTokens,
 			CostUSD: l.CostUSD, LatencyMS: l.LatencyMS, Status: l.Status, StopReason: l.StopReason, Note: l.Note,
 		})
@@ -90,6 +92,21 @@ func (a *API) getRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, toRequestJSON(req))
+}
+
+// getSubscriptionLimits returns the latest anthropic-ratelimit-* headers seen
+// on a subscription response, or an empty object.
+func (a *API) getSubscriptionLimits(w http.ResponseWriter, r *http.Request) {
+	v, ok, err := a.store.Setting(r.Context(), store.SubscriptionLimitsSetting)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	if !ok {
+		v = "{}"
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = io.WriteString(w, v)
 }
 
 func (a *API) getSettings(w http.ResponseWriter, r *http.Request) {

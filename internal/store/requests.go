@@ -8,22 +8,22 @@ import (
 )
 
 type Request struct {
-	ID               int64
-	TS               int64
-	SessionID        string
-	AgentID          string
-	Route            string
-	Strategy         string
-	AuthMode         string
-	ClientModel      string
-	Stream           bool
-	Status           string
-	HTTPStatus       int
-	Error            string
-	CostUSD          float64
-	ReferenceCostUSD float64
-	LatencyMS        int64
-	Legs             []Leg
+	ID                   int64
+	TS                   int64
+	SessionID            string
+	AgentID              string
+	Route                string
+	Strategy             string
+	ClientModel          string
+	Stream               bool
+	Status               string
+	HTTPStatus           int
+	Error                string
+	CostUSD              float64
+	SubscriptionValueUSD float64
+	ReferenceCostUSD     float64
+	LatencyMS            int64
+	Legs                 []Leg
 }
 
 type Leg struct {
@@ -31,6 +31,7 @@ type Leg struct {
 	Role             string
 	Provider         string
 	Model            string
+	Billing          string
 	InputTokens      int64
 	OutputTokens     int64
 	CacheReadTokens  int64
@@ -42,14 +43,14 @@ type Leg struct {
 	Note             string
 }
 
-const requestColumns = `id, ts, session_id, agent_id, route, strategy, auth_mode, client_model, stream, status, http_status, error, cost_usd, reference_cost_usd, latency_ms`
+const requestColumns = `id, ts, session_id, agent_id, route, strategy, client_model, stream, status, http_status, error, cost_usd, subscription_value_usd, reference_cost_usd, latency_ms`
 
 func (s *Store) InsertRequest(ctx context.Context, r Request) (int64, error) {
 	var id int64
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `INSERT INTO requests (ts, session_id, agent_id, route, strategy, auth_mode, client_model, stream, status, http_status, error, cost_usd, reference_cost_usd, latency_ms)
+		res, err := tx.ExecContext(ctx, `INSERT INTO requests (ts, session_id, agent_id, route, strategy, client_model, stream, status, http_status, error, cost_usd, subscription_value_usd, reference_cost_usd, latency_ms)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			r.TS, r.SessionID, r.AgentID, r.Route, r.Strategy, r.AuthMode, r.ClientModel, r.Stream, r.Status, r.HTTPStatus, r.Error, r.CostUSD, r.ReferenceCostUSD, r.LatencyMS)
+			r.TS, r.SessionID, r.AgentID, r.Route, r.Strategy, r.ClientModel, r.Stream, r.Status, r.HTTPStatus, r.Error, r.CostUSD, r.SubscriptionValueUSD, r.ReferenceCostUSD, r.LatencyMS)
 		if err != nil {
 			return err
 		}
@@ -57,9 +58,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			return err
 		}
 		for _, l := range r.Legs {
-			_, err := tx.ExecContext(ctx, `INSERT INTO legs (request_id, seq, role, provider, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_usd, latency_ms, status, stop_reason, note)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				id, l.Seq, l.Role, l.Provider, l.Model, l.InputTokens, l.OutputTokens, l.CacheReadTokens, l.CacheWriteTokens, l.CostUSD, l.LatencyMS, l.Status, l.StopReason, l.Note)
+			_, err := tx.ExecContext(ctx, `INSERT INTO legs (request_id, seq, role, provider, model, billing, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_usd, latency_ms, status, stop_reason, note)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				id, l.Seq, l.Role, l.Provider, l.Model, l.Billing, l.InputTokens, l.OutputTokens, l.CacheReadTokens, l.CacheWriteTokens, l.CostUSD, l.LatencyMS, l.Status, l.StopReason, l.Note)
 			if err != nil {
 				return err
 			}
@@ -122,7 +123,7 @@ func (s *Store) GetRequest(ctx context.Context, id int64) (Request, error) {
 	if err != nil {
 		return Request{}, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT seq, role, provider, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_usd, latency_ms, status, stop_reason, note
+	rows, err := s.db.QueryContext(ctx, `SELECT seq, role, provider, model, billing, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_usd, latency_ms, status, stop_reason, note
 FROM legs WHERE request_id = ? ORDER BY seq`, id)
 	if err != nil {
 		return Request{}, err
@@ -130,7 +131,7 @@ FROM legs WHERE request_id = ? ORDER BY seq`, id)
 	defer rows.Close()
 	for rows.Next() {
 		var l Leg
-		if err := rows.Scan(&l.Seq, &l.Role, &l.Provider, &l.Model, &l.InputTokens, &l.OutputTokens, &l.CacheReadTokens, &l.CacheWriteTokens, &l.CostUSD, &l.LatencyMS, &l.Status, &l.StopReason, &l.Note); err != nil {
+		if err := rows.Scan(&l.Seq, &l.Role, &l.Provider, &l.Model, &l.Billing, &l.InputTokens, &l.OutputTokens, &l.CacheReadTokens, &l.CacheWriteTokens, &l.CostUSD, &l.LatencyMS, &l.Status, &l.StopReason, &l.Note); err != nil {
 			return Request{}, err
 		}
 		r.Legs = append(r.Legs, l)
@@ -140,7 +141,7 @@ FROM legs WHERE request_id = ? ORDER BY seq`, id)
 
 func scanRequest(row scanner) (Request, error) {
 	var r Request
-	err := row.Scan(&r.ID, &r.TS, &r.SessionID, &r.AgentID, &r.Route, &r.Strategy, &r.AuthMode, &r.ClientModel, &r.Stream, &r.Status, &r.HTTPStatus, &r.Error, &r.CostUSD, &r.ReferenceCostUSD, &r.LatencyMS)
+	err := row.Scan(&r.ID, &r.TS, &r.SessionID, &r.AgentID, &r.Route, &r.Strategy, &r.ClientModel, &r.Stream, &r.Status, &r.HTTPStatus, &r.Error, &r.CostUSD, &r.SubscriptionValueUSD, &r.ReferenceCostUSD, &r.LatencyMS)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Request{}, ErrNotFound
 	}

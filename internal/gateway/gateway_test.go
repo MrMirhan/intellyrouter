@@ -27,9 +27,10 @@ const streamBody = `{"model":"intelly-claude-fast","max_tokens":1024,"stream":tr
 	`"messages":[{"role":"user","content":"fix <b>this</b> & that"}]}`
 
 type env struct {
-	url   string
-	store *store.Store
-	key   string
+	url    string
+	store  *store.Store
+	key    string
+	dbPath string
 }
 
 func setup(t *testing.T, typ provider.Type, upstream http.HandlerFunc) env {
@@ -37,7 +38,8 @@ func setup(t *testing.T, typ provider.Type, upstream http.HandlerFunc) env {
 	up := httptest.NewServer(upstream)
 	t.Cleanup(up.Close)
 
-	st, err := store.Open(filepath.Join(t.TempDir(), "gw.db"), bytes.Repeat([]byte{3}, 32))
+	dbPath := filepath.Join(t.TempDir(), "gw.db")
+	st, err := store.Open(dbPath, bytes.Repeat([]byte{3}, 32))
 	must(t, err)
 	t.Cleanup(func() { st.Close() })
 	ctx := t.Context()
@@ -58,7 +60,7 @@ func setup(t *testing.T, typ provider.Type, upstream http.HandlerFunc) env {
 	gateway.New(st, ledger.NewRecorder(st, log), up.Client(), log).Register(mux)
 	gw := httptest.NewServer(mux)
 	t.Cleanup(gw.Close)
-	return env{url: gw.URL, store: st, key: key}
+	return env{url: gw.URL, store: st, key: key, dbPath: dbPath}
 }
 
 func must(t *testing.T, err error) {
