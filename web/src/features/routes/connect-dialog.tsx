@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Spinner } from "@/components/ui/spinner"
+import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { useCreateKey, useRoutes } from "@/lib/queries"
@@ -127,18 +128,22 @@ function ConnectBody({ route }: { route: Route }) {
   const [haikuRoute, setHaikuRoute] = useState(route.name)
   const [subagentRoute, setSubagentRoute] = useState(route.name)
   const [format, setFormat] = useState<SnippetFormat>("shell")
+  const [longContext, setLongContext] = useState(true)
 
   const routeNames = [
     ...new Set([route.name, ...(routes.data ?? []).map((item) => item.name)]),
   ]
   const origin = window.location.origin
   const keyText = key.trim() || "<gateway key>"
+  // Claude Code strips "[1m]" before it sends the model name, and sizes the session at 1M
+  // instead of the 200K it assumes for names it does not know.
+  const slot = (name: string) => (longContext ? `${name}[1m]` : name)
   const modelEnv: EnvVar[] = [
-    ["ANTHROPIC_MODEL", route.name],
-    ["ANTHROPIC_DEFAULT_OPUS_MODEL", route.name],
-    ["ANTHROPIC_DEFAULT_SONNET_MODEL", route.name],
-    ["ANTHROPIC_DEFAULT_HAIKU_MODEL", haikuRoute],
-    ["CLAUDE_CODE_SUBAGENT_MODEL", subagentRoute],
+    ["ANTHROPIC_MODEL", slot(route.name)],
+    ["ANTHROPIC_DEFAULT_OPUS_MODEL", slot(route.name)],
+    ["ANTHROPIC_DEFAULT_SONNET_MODEL", slot(route.name)],
+    ["ANTHROPIC_DEFAULT_HAIKU_MODEL", slot(haikuRoute)],
+    ["CLAUDE_CODE_SUBAGENT_MODEL", slot(subagentRoute)],
   ]
   const gatewayEnv: EnvVar[] = [
     ["ANTHROPIC_BASE_URL", origin],
@@ -252,6 +257,19 @@ function ConnectBody({ route }: { route: Route }) {
           />
         </div>
       </section>
+
+      <div className="flex items-start justify-between gap-4 rounded-lg border p-3">
+        <div className="grid gap-1">
+          <Label htmlFor="connect-long-context">1M context window</Label>
+          <p className="text-sm text-muted-foreground">
+            Claude Code does not know route names, so it compacts the conversation at 200K tokens.
+            With this on, the model names end in <code>[1m]</code> and Claude Code compacts near
+            1M. Turn it off when a model in the route has a smaller window, such as Claude Haiku
+            4.5.
+          </p>
+        </div>
+        <Switch id="connect-long-context" checked={longContext} onCheckedChange={setLongContext} />
+      </div>
 
       <div className="grid gap-2">
         <div className="flex flex-wrap items-center justify-between gap-3">

@@ -89,6 +89,8 @@ export ANTHROPIC_MODEL=intelly-claude-auto
 
 Claude Code also sends background and subagent requests. Map the `ANTHROPIC_DEFAULT_*_MODEL` and `CLAUDE_CODE_SUBAGENT_MODEL` variables to a route, or those requests fail with 404.
 
+Claude Code does not know route names, so it compacts the conversation at 200K tokens. When every model in the route has a 1M window, add `[1m]` to the name, for example `ANTHROPIC_MODEL='intelly-claude-auto[1m]'`. Claude Code removes the suffix before it sends the request and compacts near 1M. The connect snippet on the Routes page adds the suffix when "1M context window" is on.
+
 If a non-Claude provider rejects Claude Code beta fields with a 400 error, set `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1`.
 
 ## Escalation rules
