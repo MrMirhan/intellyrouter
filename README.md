@@ -170,7 +170,7 @@ In one-shot tasks, nobody tells the model that a result is not good enough, so t
 
 ### From the dashboard
 
-On the Eval page, select tasks, routes, a mode, and the number of runs at the same time, confirm the warning, and start the run. You can follow the progress, cancel the run, and compare the routes when it ends. Only one run can be active. The gateway reads the tasks from `-eval-tasks` (default `eval/tasks`) and starts the Claude Code binary from `-claude` (default `claude`).
+On the Eval page, select tasks, routes, a mode, and the number of runs at the same time, confirm the warning, and start the run. You can follow the progress, cancel the run, and compare the routes when it ends. Only one run can be active. A route that uses an `anthropic-subscription` model, as a tier or as the director, needs subscription mode: gateway key mode starts Claude Code without your Claude login, so the gateway does not start that run. The gateway reads the tasks from `-eval-tasks` (default `eval/tasks`) and starts the Claude Code binary from `-claude` (default `claude`).
 
 ### From the command line
 

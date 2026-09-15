@@ -22,6 +22,15 @@ export function defaultLabel(modelId: string): string {
     .replace(/^[-._]+|[-._]+$/g, "")
 }
 
+// routeModelIds lists the models a route calls: its tiers and a guided director.
+export function routeModelIds(route: Route): number[] {
+  const ids = route.tiers.map((tier) => tier.model_id)
+  if (route.strategy === "guided" && route.settings.director?.model_id) {
+    ids.push(route.settings.director.model_id)
+  }
+  return ids
+}
+
 export function escalateSettings(route: Route): EscalateSettings {
   return {
     classifier: { ...defaultEscalateSettings.classifier, ...route.settings.classifier },

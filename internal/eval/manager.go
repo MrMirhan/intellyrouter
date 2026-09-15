@@ -69,15 +69,27 @@ func (m *Manager) Start(ctx context.Context, req StartRequest) (store.EvalRun, e
 	if len(req.Routes) == 0 {
 		return store.EvalRun{}, fmt.Errorf("%w: select at least one route", ErrInvalid)
 	}
-	for _, name := range req.Routes {
-		if _, err := m.store.RouteByName(ctx, name); errors.Is(err, store.ErrNotFound) {
-			return store.EvalRun{}, fmt.Errorf("%w: route %q does not exist", ErrInvalid, name)
-		} else if err != nil {
-			return store.EvalRun{}, err
-		}
-	}
 	if req.Mode != ModeKey && req.Mode != ModeSubscription {
 		return store.EvalRun{}, fmt.Errorf("%w: mode must be %q or %q", ErrInvalid, ModeKey, ModeSubscription)
+	}
+	for _, name := range req.Routes {
+		rt, err := m.store.RouteByName(ctx, name)
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			return store.EvalRun{}, fmt.Errorf("%w: route %q does not exist", ErrInvalid, name)
+		case err != nil:
+			return store.EvalRun{}, err
+		}
+		if req.Mode != ModeKey {
+			continue
+		}
+		login, err := routeNeedsLogin(ctx, m.store, rt)
+		if err != nil {
+			return store.EvalRun{}, err
+		}
+		if login {
+			return store.EvalRun{}, fmt.Errorf("%w: route %q uses Claude subscription models, which need your Claude Code login; start it in subscription mode", ErrInvalid, name)
+		}
 	}
 	if req.Parallel < 1 || req.Parallel > MaxParallel {
 		return store.EvalRun{}, fmt.Errorf("%w: parallel must be between 1 and %d", ErrInvalid, MaxParallel)

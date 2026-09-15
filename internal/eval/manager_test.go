@@ -3,8 +3,10 @@ package eval
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -105,4 +107,32 @@ func TestManagerCancel(t *testing.T) {
 		t.Fatalf("canceled run status = %s", got.Status)
 	}
 	m.Shutdown()
+}
+
+func TestManagerRejectsKeyModeForSubscriptionRoutes(t *testing.T) {
+	m, st := newManager(t, "#!/bin/sh\nexit 0\n")
+	ctx := t.Context()
+	fast, err := st.RouteByName(ctx, "intelly-claude-fast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub, err := st.CreateProvider(ctx, store.Provider{Type: "anthropic-subscription", Name: "claude", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fable, err := st.CreateModel(ctx, store.Model{ProviderID: sub.ID, ModelID: "claude-fable-5-1", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Only the director uses the subscription.
+	if _, err := st.CreateRoute(ctx, store.Route{
+		Name: "claude-guided-fable", Strategy: store.StrategyGuided, Tiers: fast.Tiers,
+		Settings: fmt.Sprintf(`{"director":{"model_id":%d}}`, fable.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = m.Start(ctx, StartRequest{Routes: []string{"claude-guided-fable"}, Mode: ModeKey, Parallel: 1})
+	if !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), "subscription mode") {
+		t.Fatalf("Start = %v", err)
+	}
 }

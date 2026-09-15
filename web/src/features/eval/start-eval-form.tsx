@@ -30,7 +30,15 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import { evalDifficultyLabels, evalLanguageLabels, evalModes } from "@/lib/eval"
 import { formatCount, formatPlural } from "@/lib/format"
-import { useCreateEvalRun, useEvalRuns, useEvalTasks, useRoutes } from "@/lib/queries"
+import {
+  useCreateEvalRun,
+  useEvalRuns,
+  useEvalTasks,
+  useModels,
+  useProviders,
+  useRoutes,
+} from "@/lib/queries"
+import { routeModelIds } from "@/lib/routes"
 import type { EvalTask } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -101,6 +109,8 @@ export function StartEvalForm() {
   const tasks = useEvalTasks()
   const routes = useRoutes()
   const runs = useEvalRuns()
+  const models = useModels()
+  const providers = useProviders()
   const createRun = useCreateEvalRun()
 
   const [excluded, setExcluded] = useState<ReadonlySet<string>>(new Set())
@@ -121,6 +131,21 @@ export function StartEvalForm() {
   const hiddenSelected =
     selectedTasks.length - visibleTasks.filter((task) => !excluded.has(task.id)).length
   const selectedRoutes = (routes.data ?? []).filter((route) => chosenRoutes.has(route.name))
+  const subscriptionProviders = new Set(
+    (providers.data ?? [])
+      .filter((provider) => provider.type === "anthropic-subscription")
+      .map((provider) => provider.id),
+  )
+  const subscriptionModels = new Set(
+    (models.data ?? [])
+      .filter((model) => subscriptionProviders.has(model.provider_id))
+      .map((model) => model.id),
+  )
+  // Gateway key mode starts Claude Code without a Claude login, so subscription models fail.
+  const loginRoutes = selectedRoutes.filter((route) =>
+    routeModelIds(route).some((id) => subscriptionModels.has(id)),
+  )
+  const needsLogin = mode === "key" && loginRoutes.length > 0
   const runCount = selectedTasks.length * selectedRoutes.length
   const activeRun = runs.data?.find((run) => run.status === "running")
 
@@ -133,6 +158,7 @@ export function StartEvalForm() {
     !activeRun &&
     selectedTasks.length > 0 &&
     selectedRoutes.length > 0 &&
+    !needsLogin &&
     understood &&
     !createRun.isPending
 
@@ -403,6 +429,29 @@ export function StartEvalForm() {
                   </Select>
                 </div>
               </div>
+
+              {needsLogin && (
+                <Alert variant="destructive">
+                  <TriangleAlertIcon />
+                  <AlertTitle>Gateway key mode cannot run these routes</AlertTitle>
+                  <AlertDescription>
+                    <p>
+                      {loginRoutes.map((route) => route.name).join(", ")} use Claude subscription
+                      models. Gateway key mode starts Claude Code without your Claude login, so
+                      those calls fail.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="mt-2"
+                      onClick={() => setMode("subscription")}
+                    >
+                      Use Claude subscription mode
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              )}
 
               <p className="text-sm font-medium tabular-nums" aria-live="polite">
                 {formatPlural(selectedTasks.length, "task")} ×{" "}
