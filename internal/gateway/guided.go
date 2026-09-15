@@ -110,7 +110,7 @@ func (s *Server) guided(w http.ResponseWriter, r *http.Request, route store.Rout
 	}
 	switch {
 	case st.Guidance == "":
-	case executor.config.Type == provider.AnthropicSubscription:
+	case executor.subscription():
 		note += "; guidance not added to a subscription request"
 	default:
 		if injected, err := guided.InjectGuidance(body, st.Guidance, st.GuidanceReason); err == nil {
@@ -120,7 +120,7 @@ func (s *Server) guided(w http.ResponseWriter, r *http.Request, route store.Rout
 			note += "; guidance not added: " + err.Error()
 		}
 	}
-	if st.Advice != "" && executor.config.Type != provider.AnthropicSubscription {
+	if st.Advice != "" && !executor.subscription() {
 		if injected, err := guided.InjectAdvice(body, st.AdviceQuestion, st.Advice); err == nil {
 			body = injected
 			if added != "" {
@@ -135,7 +135,7 @@ func (s *Server) guided(w http.ResponseWriter, r *http.Request, route store.Rout
 	if c := s.advisorFor(cr, executor); c != nil {
 		run.consultant = *c
 	} else if cr.advisor == nil && settings.Consult && cr.stream && turn.HasTools &&
-		(director.config.Type != provider.AnthropicSubscription || s.viaClaudeCode(settings.Director, director)) && executor.config.Type != provider.AnthropicSubscription {
+		(director.config.Type != provider.AnthropicSubscription || s.viaClaudeCode(settings.Director, director)) && !executor.subscription() {
 		run.consultant = consultant{role: guided.RoleDirector, target: director, maxCalls: settings.Director.MaxCallsPerTurn, director: settings.Director}
 	}
 	if run.role != "" {
@@ -147,7 +147,7 @@ func (s *Server) guided(w http.ResponseWriter, r *http.Request, route store.Rout
 	}
 	legs := s.callWithFallback(w, r, route.Tiers, tierIndex, executor, sizeKey, func(t target) clientRequest {
 		// Guidance is never added to a subscription request.
-		if t.config.Type == provider.AnthropicSubscription {
+		if t.subscription() {
 			return cr
 		}
 		return exec
@@ -301,9 +301,9 @@ func (s *Server) consultDirector(ctx context.Context, director target, body []by
 
 // askModel sends a consult request to a model on an API key and reads the answer.
 func (s *Server) askModel(ctx context.Context, t target, req []byte, capture bool) (string, bool, ledger.Leg) {
-	leg := t.newLeg()
 	start := time.Now()
-	message, usage, err := s.complete(ctx, t, req)
+	message, usage, served, err := s.complete(ctx, t, req)
+	leg := served.newLeg()
 	leg.Latency, leg.Usage = time.Since(start), usage
 	if capture {
 		leg.Output = message

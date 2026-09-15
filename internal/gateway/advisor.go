@@ -69,7 +69,7 @@ func applyRouteAdvisor(adv *routeAdvisor, off bool, body []byte) ([]byte, error)
 func (s *Server) advisorFor(cr clientRequest, executor target) *consultant {
 	adv := cr.advisor
 	switch {
-	case adv == nil || !cr.stream || executor.config.Type == provider.AnthropicSubscription || !guided.HasTools(cr.body):
+	case adv == nil || !cr.stream || executor.subscription() || !guided.HasTools(cr.body):
 		return nil
 	case isAnthropic(executor) && isAnthropic(adv.target) && hasAdvisorTool(cr.body):
 		return nil

@@ -71,6 +71,11 @@ func (s *Store) ModelByModelID(ctx context.Context, modelID string) (Model, erro
 	return scanModel(s.db.QueryRowContext(ctx, `SELECT `+modelColumns+` FROM models WHERE model_id = ? ORDER BY id LIMIT 1`, modelID))
 }
 
+// ModelByProvider returns a provider's model with an upstream model ID.
+func (s *Store) ModelByProvider(ctx context.Context, providerID int64, modelID string) (Model, error) {
+	return scanModel(s.db.QueryRowContext(ctx, `SELECT `+modelColumns+` FROM models WHERE provider_id = ? AND model_id = ?`, providerID, modelID))
+}
+
 // ListModels returns the models of one provider, or of all providers when providerID is 0.
 func (s *Store) ListModels(ctx context.Context, providerID int64) ([]Model, error) {
 	query := `SELECT ` + modelColumns + ` FROM models`

@@ -41,9 +41,14 @@ type target struct {
 	provider store.Provider
 	model    store.Model
 	config   provider.Config
+	// combo is set when the model is a combo of other models.
+	combo *comboTarget
 }
 
 func (t target) price() ledger.Price {
+	if t.combo != nil {
+		return t.combo.members[0].price()
+	}
 	p := ledger.Price{In: t.model.PriceIn, Out: t.model.PriceOut, CacheRead: t.model.PriceCacheRead, CacheWrite: t.model.PriceCacheWrite}
 	if p == (ledger.Price{}) {
 		if builtin, ok := ledger.BuiltinPrice(t.model.ModelID); ok {
@@ -131,6 +136,9 @@ func (s *Server) call(w http.ResponseWriter, r *http.Request, t target, cr clien
 		leg.Status, leg.HTTPStatus, leg.Error = ledger.StatusError, status, msg
 		return leg
 	}
+	if t.combo != nil {
+		return s.callCombo(w, r, t, cr)
+	}
 	if t.config.Type == provider.AnthropicSubscription && cr.claudeAuth == "" {
 		return fail(http.StatusUnauthorized, "authentication_error", errNoClaudeLogin)
 	}
@@ -177,6 +185,9 @@ func (s *Server) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "api_error", "route model unavailable: "+err.Error())
 		return
 	}
+	if t.combo != nil {
+		t = t.combo.members[0]
+	}
 	if t.config.Type.Format() != provider.FormatAnthropic {
 		// Claude Code falls back to its own estimate when counting is unavailable.
 		writeError(w, http.StatusNotFound, "not_found_error", "token counting is not available for this route")
@@ -220,6 +231,9 @@ func readRequest(w http.ResponseWriter, r *http.Request) ([]byte, requestMeta, b
 func (s *Server) route(w http.ResponseWriter, r *http.Request, name string) (store.Route, bool) {
 	route, err := s.store.RouteByName(r.Context(), name)
 	if errors.Is(err, store.ErrNotFound) {
+		if direct, ok := s.directRoute(r.Context(), name); ok {
+			return direct, true
+		}
 		if fallback, ok, ferr := s.store.Setting(r.Context(), store.FallbackRouteSetting); ferr == nil && ok && fallback != "" {
 			route, err = s.store.RouteByName(r.Context(), fallback)
 		}
@@ -236,6 +250,12 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request, name string) (sto
 }
 
 func (s *Server) resolve(ctx context.Context, modelID int64) (target, error) {
+	return s.resolveModel(ctx, modelID, true)
+}
+
+// resolveModel loads a model and its provider; combos says whether the model
+// may be a combo.
+func (s *Server) resolveModel(ctx context.Context, modelID int64, combos bool) (target, error) {
 	m, err := s.store.GetModel(ctx, modelID)
 	if err != nil {
 		return target{}, err
@@ -246,6 +266,12 @@ func (s *Server) resolve(ctx context.Context, modelID int64) (target, error) {
 	}
 	if !m.Enabled || !p.Enabled {
 		return target{}, errDisabled
+	}
+	if p.Type == store.ComboProviderType {
+		if !combos {
+			return target{}, errors.New("a combo cannot contain another combo")
+		}
+		return s.resolveCombo(ctx, p, m)
 	}
 	return target{provider: p, model: m, config: provider.ConfigFor(p)}, nil
 }
@@ -286,6 +312,27 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 			DisplayName: rt.Name,
 			CreatedAt:   time.UnixMilli(rt.CreatedAt).UTC().Format(time.RFC3339),
 		})
+	}
+	// Models and combos can also be used directly as "<provider slug>/<model id>".
+	providers, err := s.store.ListProviders(r.Context())
+	if err != nil {
+		s.internalError(w, "list providers", err)
+		return
+	}
+	models, err := s.store.ListModels(r.Context(), 0)
+	if err != nil {
+		s.internalError(w, "list models", err)
+		return
+	}
+	byID := make(map[int64]store.Provider, len(providers))
+	for _, p := range providers {
+		byID[p.ID] = p
+	}
+	for _, m := range models {
+		if p := byID[m.ProviderID]; m.Enabled && p.Enabled && p.Slug != "" {
+			name := p.Slug + "/" + m.ModelID
+			resp.Data = append(resp.Data, model{Type: "model", ID: name, DisplayName: name, CreatedAt: time.UnixMilli(p.CreatedAt).UTC().Format(time.RFC3339)})
+		}
 	}
 	if n := len(resp.Data); n > 0 {
 		resp.FirstID, resp.LastID = &resp.Data[0].ID, &resp.Data[n-1].ID

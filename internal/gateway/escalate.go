@@ -106,9 +106,9 @@ func (s *Server) classify(ctx context.Context, modelID int64, turn escalate.Turn
 	if t.config.Type == provider.AnthropicSubscription {
 		return false, "", ledger.Leg{}, errors.New("classifier cannot use a subscription provider")
 	}
-	leg := t.newLeg()
 	start := time.Now()
-	message, usage, err := s.complete(ctx, t, escalate.ClassifierRequest(t.model.ModelID, turn))
+	message, usage, served, err := s.complete(ctx, t, escalate.ClassifierRequest(t.model.ModelID, turn))
+	leg := served.newLeg()
 	leg.Latency, leg.Usage = time.Since(start), usage
 	if capture {
 		leg.Output = message
@@ -127,7 +127,15 @@ func (s *Server) classify(ctx context.Context, modelID int64, turn escalate.Turn
 
 // complete makes a non-streaming call that the gateway originates and returns
 // the answer as an Anthropic message body.
-func (s *Server) complete(ctx context.Context, t target, body []byte) ([]byte, ledger.Usage, error) {
+func (s *Server) complete(ctx context.Context, t target, body []byte) ([]byte, ledger.Usage, target, error) {
+	if t.combo != nil {
+		return s.completeCombo(ctx, t, body)
+	}
+	message, usage, err := s.completeModel(ctx, t, body)
+	return message, usage, t, err
+}
+
+func (s *Server) completeModel(ctx context.Context, t target, body []byte) ([]byte, ledger.Usage, error) {
 	openAI := t.config.Type.Format() == provider.FormatOpenAI
 	var req *http.Request
 	var err error

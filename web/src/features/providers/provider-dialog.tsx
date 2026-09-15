@@ -30,7 +30,16 @@ import {
   type ProviderPreset,
 } from "@/lib/providers"
 import { useCreateProvider, useUpdateProvider } from "@/lib/queries"
-import type { Provider, ProviderType } from "@/lib/types"
+import type { UpstreamProvider, ProviderType } from "@/lib/types"
+
+// slugFromName matches the slug the gateway derives from a provider name.
+function slugFromName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/gu, "-")
+    .replace(/^[-._]+|[-._]+$/g, "")
+}
 
 export function ProviderDialog({
   open,
@@ -39,7 +48,7 @@ export function ProviderDialog({
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  provider: Provider | null
+  provider: UpstreamProvider | null
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -92,7 +101,7 @@ function ProviderForm({
   onBack,
   onDone,
 }: {
-  provider?: Provider
+  provider?: UpstreamProvider
   preset?: ProviderPreset
   onBack?: () => void
   onDone: () => void
@@ -101,6 +110,7 @@ function ProviderForm({
   const updateProvider = useUpdateProvider()
   const [type, setType] = useState<ProviderType>(provider?.type ?? preset?.type ?? "anthropic-compatible")
   const [name, setName] = useState(provider?.name ?? preset?.name ?? "")
+  const [slug, setSlug] = useState(provider?.slug ?? "")
   const [baseUrl, setBaseUrl] = useState(provider?.base_url ?? preset?.baseUrl ?? "")
   const [apiKey, setApiKey] = useState("")
   const [enabled, setEnabled] = useState(provider?.enabled ?? true)
@@ -119,7 +129,7 @@ function ProviderForm({
       updateProvider.mutate(
         {
           id: provider.id,
-          input: { type, name: name.trim(), base_url: showBaseUrl ? baseUrl.trim() : "", enabled, ...key },
+          input: { type, name: name.trim(), slug: slug.trim(), base_url: showBaseUrl ? baseUrl.trim() : "", enabled, ...key },
         },
         {
           onSuccess: (saved) => {
@@ -135,6 +145,7 @@ function ProviderForm({
         type,
         name: name.trim(),
         enabled,
+        ...(slug.trim() ? { slug: slug.trim() } : {}),
         ...(showBaseUrl && baseUrl.trim() ? { base_url: baseUrl.trim() } : {}),
         ...key,
       },
@@ -189,6 +200,26 @@ function ProviderForm({
           autoComplete="off"
           required
         />
+      </div>
+
+      <div className="grid gap-2">
+        <Label htmlFor="provider-slug">
+          Slug <span className="text-muted-foreground">(optional)</span>
+        </Label>
+        <Input
+          id="provider-slug"
+          value={slug}
+          onChange={(event) => setSlug(event.target.value)}
+          placeholder={slugFromName(name) || "cc"}
+          className="font-mono"
+          autoComplete="off"
+          aria-describedby="provider-slug-hint"
+        />
+        <p id="provider-slug-hint" className="text-sm text-muted-foreground">
+          Claude Code can use this provider&apos;s models without a route as{" "}
+          <code>{slug.trim() || slugFromName(name) || "slug"}/&lt;model id&gt;</code>. Leave blank to use the
+          name.
+        </p>
       </div>
 
       {type === "anthropic-subscription" && (

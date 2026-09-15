@@ -31,17 +31,17 @@ import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
 import { ProviderDialog } from "@/features/providers/provider-dialog"
 import { ProviderModels } from "@/features/providers/provider-models"
-import { providerTypes } from "@/lib/providers"
+import { isUpstream, providerTypes } from "@/lib/providers"
 import {
   useDeleteProvider,
   useProviders,
   useSyncModels,
   useUpdateProvider,
 } from "@/lib/queries"
-import type { Provider } from "@/lib/types"
+import type { UpstreamProvider } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
-function KeyStatus({ provider }: { provider: Provider }) {
+function KeyStatus({ provider }: { provider: UpstreamProvider }) {
   const info = providerTypes[provider.type]
   if (info.key === "none") return null
   if (provider.has_key) return <Badge variant="outline">Key set</Badge>
@@ -49,7 +49,7 @@ function KeyStatus({ provider }: { provider: Provider }) {
   return <Badge variant="outline">No key</Badge>
 }
 
-function baseUrlText(provider: Provider): string {
+function baseUrlText(provider: UpstreamProvider): string {
   const info = providerTypes[provider.type]
   if (info.baseUrl === "none") return "Claude Code login passthrough"
   if (provider.base_url) return provider.base_url
@@ -62,7 +62,7 @@ function ProviderCard({
   onExpandedChange,
   onEdit,
 }: {
-  provider: Provider
+  provider: UpstreamProvider
   expanded: boolean
   onExpandedChange: (expanded: boolean) => void
   onEdit: () => void
@@ -105,6 +105,9 @@ function ProviderCard({
               <span className="font-medium">{provider.name}</span>
               <ProviderTypeBadge type={provider.type} />
               <KeyStatus provider={provider} />
+              <span className="text-xs text-muted-foreground">
+                Direct names: <code className="font-mono text-foreground">{provider.slug}/&lt;model id&gt;</code>
+              </span>
             </div>
             <p className="truncate font-mono text-xs text-muted-foreground">{baseUrlText(provider)}</p>
           </div>
@@ -160,7 +163,8 @@ function ProviderCard({
 
 export function ProvidersPage() {
   const providers = useProviders()
-  const [dialog, setDialog] = useState<{ open: boolean; provider: Provider | null }>({
+  const upstream = (providers.data ?? []).filter(isUpstream)
+  const [dialog, setDialog] = useState<{ open: boolean; provider: UpstreamProvider | null }>({
     open: false,
     provider: null,
   })
@@ -205,7 +209,7 @@ export function ProvidersPage() {
             <Skeleton key={index} className="h-20 w-full" />
           ))}
         </div>
-      ) : providers.data.length === 0 ? (
+      ) : upstream.length === 0 ? (
         <Empty className="border">
           <EmptyHeader>
             <EmptyMedia variant="icon">
@@ -220,7 +224,7 @@ export function ProvidersPage() {
         </Empty>
       ) : (
         <div className="grid gap-3">
-          {providers.data.map((provider) => (
+          {upstream.map((provider) => (
             <ProviderCard
               key={provider.id}
               provider={provider}

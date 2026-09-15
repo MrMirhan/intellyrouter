@@ -8,22 +8,24 @@ import (
 )
 
 type Provider struct {
-	ID        int64
-	Type      string
-	Name      string
+	ID   int64
+	Type string
+	Name string
+	// Slug names the provider's models without a route: "<slug>/<model_id>".
+	Slug      string
 	BaseURL   string
 	APIKey    string
 	Enabled   bool
 	CreatedAt int64
 }
 
-const providerColumns = `id, type, name, base_url, api_key_enc, enabled, created_at`
+const providerColumns = `id, type, name, slug, base_url, api_key_enc, enabled, created_at`
 
 func (s *Store) CreateProvider(ctx context.Context, p Provider) (Provider, error) {
 	p.CreatedAt = time.Now().UnixMilli()
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO providers (type, name, base_url, api_key_enc, enabled, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		p.Type, p.Name, p.BaseURL, s.seal(p.APIKey), p.Enabled, p.CreatedAt)
+		`INSERT INTO providers (type, name, slug, base_url, api_key_enc, enabled, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		p.Type, p.Name, p.Slug, p.BaseURL, s.seal(p.APIKey), p.Enabled, p.CreatedAt)
 	if err != nil {
 		return Provider{}, mapErr(err)
 	}
@@ -33,8 +35,8 @@ func (s *Store) CreateProvider(ctx context.Context, p Provider) (Provider, error
 
 func (s *Store) UpdateProvider(ctx context.Context, p Provider) error {
 	return affected(s.db.ExecContext(ctx,
-		`UPDATE providers SET type = ?, name = ?, base_url = ?, api_key_enc = ?, enabled = ? WHERE id = ?`,
-		p.Type, p.Name, p.BaseURL, s.seal(p.APIKey), p.Enabled, p.ID))
+		`UPDATE providers SET type = ?, name = ?, slug = ?, base_url = ?, api_key_enc = ?, enabled = ? WHERE id = ?`,
+		p.Type, p.Name, p.Slug, p.BaseURL, s.seal(p.APIKey), p.Enabled, p.ID))
 }
 
 func (s *Store) DeleteProvider(ctx context.Context, id int64) error {
@@ -43,6 +45,11 @@ func (s *Store) DeleteProvider(ctx context.Context, id int64) error {
 
 func (s *Store) GetProvider(ctx context.Context, id int64) (Provider, error) {
 	return s.scanProvider(s.db.QueryRowContext(ctx, `SELECT `+providerColumns+` FROM providers WHERE id = ?`, id))
+}
+
+// ProviderBySlug returns the provider with a slug.
+func (s *Store) ProviderBySlug(ctx context.Context, slug string) (Provider, error) {
+	return s.scanProvider(s.db.QueryRowContext(ctx, `SELECT `+providerColumns+` FROM providers WHERE slug = ? ORDER BY id LIMIT 1`, slug))
 }
 
 func (s *Store) ListProviders(ctx context.Context) ([]Provider, error) {
@@ -65,7 +72,7 @@ func (s *Store) ListProviders(ctx context.Context) ([]Provider, error) {
 func (s *Store) scanProvider(row scanner) (Provider, error) {
 	var p Provider
 	var sealed []byte
-	err := row.Scan(&p.ID, &p.Type, &p.Name, &p.BaseURL, &sealed, &p.Enabled, &p.CreatedAt)
+	err := row.Scan(&p.ID, &p.Type, &p.Name, &p.Slug, &p.BaseURL, &sealed, &p.Enabled, &p.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Provider{}, ErrNotFound
 	}

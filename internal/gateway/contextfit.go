@@ -206,6 +206,23 @@ func (b *errorBuffer) overflow() bool {
 		contextOverflow.Match(b.body.Bytes())
 }
 
+// retryable reports whether another model may answer the request that got the
+// held error: the upstream failed, limited the rate, or rejected the key, the
+// model, or the prompt's length. A request the upstream found invalid fails
+// the same way everywhere.
+func (b *errorBuffer) retryable() bool {
+	if b.passed || b.status == 0 {
+		return false
+	}
+	switch b.status {
+	case http.StatusBadRequest, http.StatusRequestEntityTooLarge:
+		return b.overflow()
+	case http.StatusUnprocessableEntity:
+		return false
+	}
+	return b.status > http.StatusBadRequest
+}
+
 // release sends a held error to the client.
 func (b *errorBuffer) release() {
 	if b.passed || b.status == 0 {

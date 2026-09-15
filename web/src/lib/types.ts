@@ -8,23 +8,47 @@ export type ProviderType =
 
 export interface Provider {
   id: number
-  type: ProviderType
+  // "combo" is the built-in provider that holds combos.
+  type: ProviderType | "combo"
   name: string
+  // Models of the provider can be used without a route as "<slug>/<model_id>".
+  slug: string
   base_url: string
   has_key: boolean
   enabled: boolean
   created_at: number
 }
 
+export type UpstreamProvider = Provider & { type: ProviderType }
+
 export interface ProviderCreate {
   type: ProviderType
   name: string
+  slug?: string
   base_url?: string
   api_key?: string
   enabled?: boolean
 }
 
 export type ProviderUpdate = Partial<ProviderCreate>
+
+export type ComboStrategy = "fallback" | "round-robin" | "least-used"
+
+export interface Combo {
+  id: number
+  name: string
+  strategy: ComboStrategy
+  enabled: boolean
+  // Model row IDs in order.
+  members: number[]
+}
+
+export interface ComboInput {
+  name: string
+  strategy: ComboStrategy
+  enabled?: boolean
+  members: number[]
+}
 
 export interface Model {
   id: number

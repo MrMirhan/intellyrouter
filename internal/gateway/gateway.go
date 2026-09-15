@@ -27,6 +27,7 @@ type Server struct {
 	signatures  *signatureCache
 	sizes       *sizeTracker
 	claude      *claudeCode
+	combos      *comboBalancer
 	capture     captureFlag
 }
 
@@ -45,7 +46,7 @@ type captureFlag struct {
 func New(st *store.Store, rec *ledger.Recorder, client *http.Client, log *slog.Logger) *Server {
 	return &Server{
 		store: st, ledger: rec, client: client, log: log,
-		decider: escalate.NewDecider(turnTTL), compat: newCompat(), guidedTurns: guided.NewTracker(turnTTL), signatures: newSignatureCache(turnTTL), sizes: newSizeTracker(turnTTL),
+		decider: escalate.NewDecider(turnTTL), compat: newCompat(), guidedTurns: guided.NewTracker(turnTTL), signatures: newSignatureCache(turnTTL), sizes: newSizeTracker(turnTTL), combos: newComboBalancer(),
 	}
 }
 

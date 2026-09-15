@@ -1,7 +1,14 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
 import type {
+  ComboInput,
   ModelCreate,
   ModelUpdate,
   ProviderUpdate,
@@ -24,6 +31,7 @@ export const queryKeys = {
   allModels: ["models", "all"],
   providerModels: (providerId: number) => ["models", "provider", providerId],
   routes: ["routes"],
+  combos: ["combos"],
   keys: ["keys"],
   requestList: (filter: RequestFilter) => ["requests", "list", filter],
   request: (id: number) => ["requests", "detail", id],
@@ -160,6 +168,43 @@ export function useDeleteRoute() {
   return useMutation({
     mutationFn: api.deleteRoute,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.routes }),
+  })
+}
+
+export function useCombos() {
+  return useQuery({ queryKey: queryKeys.combos, queryFn: api.listCombos })
+}
+
+// A combo is also a model of the built-in combo provider.
+function refreshCombos(queryClient: QueryClient) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.combos }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.models }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.providers }),
+  ])
+}
+
+export function useCreateCombo() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: api.createCombo,
+    onSuccess: () => refreshCombos(queryClient),
+  })
+}
+
+export function useUpdateCombo() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, input }: { id: number; input: Partial<ComboInput> }) => api.updateCombo(id, input),
+    onSuccess: () => refreshCombos(queryClient),
+  })
+}
+
+export function useDeleteCombo() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: api.deleteCombo,
+    onSuccess: () => refreshCombos(queryClient),
   })
 }
 

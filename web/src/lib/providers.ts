@@ -1,4 +1,4 @@
-import type { ProviderType } from "@/lib/types"
+import type { Provider, ProviderType, UpstreamProvider } from "@/lib/types"
 
 type Requirement = "required" | "optional" | "none"
 
@@ -125,3 +125,8 @@ export const providerPresets: ProviderPreset[] = [
   },
   { id: "custom", label: "Custom", type: "anthropic-compatible", name: "", baseUrl: "" },
 ]
+
+// isUpstream is false for the built-in provider that holds combos.
+export function isUpstream(provider: Provider): provider is UpstreamProvider {
+  return provider.type !== "combo"
+}

@@ -49,6 +49,11 @@ func (a *API) Register(mux *http.ServeMux) {
 		{"GET /api/admin/models", a.listModels},
 		{"PATCH /api/admin/models/{id}", a.updateModel},
 
+		{"GET /api/admin/combos", a.listCombos},
+		{"POST /api/admin/combos", a.createCombo},
+		{"PATCH /api/admin/combos/{id}", a.updateCombo},
+		{"DELETE /api/admin/combos/{id}", a.deleteCombo},
+
 		{"GET /api/admin/routes", a.listRoutes},
 		{"POST /api/admin/routes", a.createRoute},
 		{"PATCH /api/admin/routes/{id}", a.updateRoute},

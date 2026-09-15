@@ -1,4 +1,6 @@
 import type {
+  Combo,
+  ComboInput,
   CreatedGatewayKey,
   EvalRun,
   EvalRunDetail,
@@ -98,6 +100,11 @@ export const api = {
   listModels: (providerId?: number) =>
     call<Model[]>("GET", `/models${queryString({ provider_id: providerId })}`),
   updateModel: (id: number, input: ModelUpdate) => call<Model>("PATCH", `/models/${id}`, input),
+
+  listCombos: () => call<Combo[]>("GET", "/combos"),
+  createCombo: (input: ComboInput) => call<Combo>("POST", "/combos", input),
+  updateCombo: (id: number, input: Partial<ComboInput>) => call<Combo>("PATCH", `/combos/${id}`, input),
+  deleteCombo: (id: number) => call<void>("DELETE", `/combos/${id}`),
 
   listRoutes: () => call<Route[]>("GET", "/routes"),
   createRoute: (input: RouteInput) => call<Route>("POST", "/routes", input),

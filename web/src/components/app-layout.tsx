@@ -2,6 +2,7 @@ import { Link, Outlet, useLocation, useNavigate } from "react-router"
 import {
   FlaskConicalIcon,
   KeyRoundIcon,
+  LayersIcon,
   LayoutDashboardIcon,
   LogOutIcon,
   MessagesSquareIcon,
@@ -37,6 +38,7 @@ const navigation = [
   { to: "/sessions", label: "Sessions", icon: MessagesSquareIcon },
   { to: "/eval", label: "Eval", icon: FlaskConicalIcon },
   { to: "/providers", label: "Providers", icon: ServerIcon },
+  { to: "/combos", label: "Combos", icon: LayersIcon },
   { to: "/routes", label: "Routes", icon: RouteIcon },
   { to: "/keys", label: "Keys", icon: KeyRoundIcon },
   { to: "/settings", label: "Settings", icon: SettingsIcon },

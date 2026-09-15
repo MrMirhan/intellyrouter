@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -15,6 +16,7 @@ type providerJSON struct {
 	ID        int64  `json:"id"`
 	Type      string `json:"type"`
 	Name      string `json:"name"`
+	Slug      string `json:"slug"`
 	BaseURL   string `json:"base_url"`
 	HasKey    bool   `json:"has_key"`
 	Enabled   bool   `json:"enabled"`
@@ -22,12 +24,13 @@ type providerJSON struct {
 }
 
 func toProviderJSON(p store.Provider) providerJSON {
-	return providerJSON{ID: p.ID, Type: p.Type, Name: p.Name, BaseURL: p.BaseURL, HasKey: p.APIKey != "", Enabled: p.Enabled, CreatedAt: p.CreatedAt}
+	return providerJSON{ID: p.ID, Type: p.Type, Name: p.Name, Slug: p.Slug, BaseURL: p.BaseURL, HasKey: p.APIKey != "", Enabled: p.Enabled, CreatedAt: p.CreatedAt}
 }
 
 type providerInput struct {
 	Type    *string `json:"type"`
 	Name    *string `json:"name"`
+	Slug    *string `json:"slug"`
 	BaseURL *string `json:"base_url"`
 	APIKey  *string `json:"api_key"`
 	Enabled *bool   `json:"enabled"`
@@ -40,6 +43,9 @@ func (in providerInput) apply(p *store.Provider) {
 	if in.Name != nil {
 		p.Name = strings.TrimSpace(*in.Name)
 	}
+	if in.Slug != nil {
+		p.Slug = strings.TrimSpace(*in.Slug)
+	}
 	if in.BaseURL != nil {
 		p.BaseURL = strings.TrimSpace(*in.BaseURL)
 	}
@@ -51,11 +57,21 @@ func (in providerInput) apply(p *store.Provider) {
 	}
 }
 
-// validateProvider checks the provider and clears any key sent for a
-// subscription provider, which must never store a credential.
-func validateProvider(p *store.Provider) error {
+// validateProvider checks the provider, fills an empty slug from the name, and
+// clears any key sent for a subscription provider, which must never store a
+// credential.
+func (a *API) validateProvider(ctx context.Context, p *store.Provider) error {
 	t := provider.Type(p.Type)
+	if p.Slug == "" {
+		p.Slug = store.Slug(p.Name)
+	}
 	switch {
+	case p.Type == store.ComboProviderType:
+		return errComboProvider
+	case !labelPattern.MatchString(p.Slug):
+		return errors.New(`slug may only contain a-z, 0-9, ".", "_" and "-", and must start with a letter or digit`)
+	case p.Slug == "combo":
+		return errors.New(`the slug "combo" is reserved for combos`)
 	case !t.Valid():
 		return fmt.Errorf("unknown provider type %q", p.Type)
 	case p.Name == "":
@@ -65,11 +81,22 @@ func validateProvider(p *store.Provider) error {
 	case t.NeedsKey() && p.APIKey == "":
 		return errors.New("api_key is required")
 	}
+	providers, err := a.store.ListProviders(ctx)
+	if err != nil {
+		return err
+	}
+	for _, other := range providers {
+		if other.ID != p.ID && other.Slug == p.Slug {
+			return fmt.Errorf("provider %s already uses the slug %q", other.Name, p.Slug)
+		}
+	}
 	if t == provider.AnthropicSubscription {
 		p.APIKey = ""
 	}
 	return nil
 }
+
+var errComboProvider = errors.New("the combo provider is managed on the Combos page")
 
 func (a *API) listProviders(w http.ResponseWriter, r *http.Request) {
 	ps, err := a.store.ListProviders(r.Context())
@@ -91,7 +118,7 @@ func (a *API) createProvider(w http.ResponseWriter, r *http.Request) {
 	}
 	p := store.Provider{Enabled: true}
 	in.apply(&p)
-	if err := validateProvider(&p); err != nil {
+	if err := a.validateProvider(r.Context(), &p); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -112,8 +139,12 @@ func (a *API) updateProvider(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
+	if p.Type == store.ComboProviderType {
+		writeError(w, http.StatusBadRequest, errComboProvider.Error())
+		return
+	}
 	in.apply(&p)
-	if err := validateProvider(&p); err != nil {
+	if err := a.validateProvider(r.Context(), &p); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -125,11 +156,15 @@ func (a *API) updateProvider(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) deleteProvider(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r)
+	p, ok := a.loadProvider(w, r)
 	if !ok {
 		return
 	}
-	if err := a.store.DeleteProvider(r.Context(), id); err != nil {
+	if p.Type == store.ComboProviderType {
+		writeError(w, http.StatusBadRequest, errComboProvider.Error())
+		return
+	}
+	if err := a.store.DeleteProvider(r.Context(), p.ID); err != nil {
 		a.fail(w, err)
 		return
 	}
@@ -140,6 +175,10 @@ func (a *API) deleteProvider(w http.ResponseWriter, r *http.Request) {
 func (a *API) syncModels(w http.ResponseWriter, r *http.Request) {
 	p, ok := a.loadProvider(w, r)
 	if !ok {
+		return
+	}
+	if p.Type == store.ComboProviderType {
+		writeError(w, http.StatusBadRequest, errComboProvider.Error())
 		return
 	}
 	remote, err := provider.ListModels(r.Context(), a.client, provider.ConfigFor(p))
@@ -230,6 +269,10 @@ func (in modelInput) apply(m *store.Model) {
 func (a *API) createModel(w http.ResponseWriter, r *http.Request) {
 	p, ok := a.loadProvider(w, r)
 	if !ok {
+		return
+	}
+	if p.Type == store.ComboProviderType {
+		writeError(w, http.StatusBadRequest, errComboProvider.Error())
 		return
 	}
 	var in modelInput

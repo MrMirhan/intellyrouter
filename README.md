@@ -93,6 +93,26 @@ Claude Code does not know route names, so it compacts the conversation at 200K t
 
 If a non-Claude provider rejects Claude Code beta fields with a 400 error, set `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1`.
 
+## Direct model names and combos
+
+Every provider has a slug. Claude Code can use an enabled model without a route as `<slug>/<model id>`, for example `cc/claude-opus-5` when the Claude subscription provider has the slug `cc`, or `gemini/gemini-3.8-flash`. The gateway sends the request to that model, like a direct route. The slug is the provider name in lowercase with dashes unless you set one in the provider's settings. A `[1m]` suffix works as for routes, for example `cc/claude-opus-5[1m]`.
+
+A combo is a named list of models, on the Combos page. Each request goes to one of its models:
+
+- **Fallback chain**: the first model. The next model gets the request only when the one before it fails.
+- **Round robin**: the models take turns.
+- **Least used**: the model with the fewest requests in progress.
+
+With every strategy, a request that fails before its response starts moves on to the next model: after a rate limit, a server error, a rejected key or model, or a prompt too long for the model's context window. A request that the upstream finds invalid goes back to Claude Code with that error.
+
+Use a combo in Claude Code as `combo/<name>`, or choose it in a route like a model: as a tier, the director, the advisor, or the classifier.
+
+- A combo cannot contain another combo.
+- The gateway does not use a Claude subscription for its own calls, so a director, advisor, or classifier combo skips its subscription models.
+- A guided route treats a combo that contains a subscription model like a subscription tier: the executor gets no written guidance and no questions to the director or the advisor.
+- The ledger records the model that answered, with a note such as "combo stack after MiniMax-M2.7 returned 429".
+- `/v1/models` lists the direct names. Claude Code's model discovery keeps only names that contain `claude` or `anthropic`; add other names to the `/model` picker with `modelPicker`.
+
 ## Escalation rules
 
 An escalate route stores its rules in the route settings:
