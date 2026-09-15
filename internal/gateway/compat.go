@@ -31,6 +31,8 @@ var extraInputs = regexp.MustCompile(`^([a-z_]+)(?:\.[^:]*)?: Extra inputs are n
 func adaptationFor(message string) (string, bool) {
 	lower := strings.ToLower(message)
 	switch {
+	case strings.Contains(lower, "clear_thinking"):
+		return "clear_thinking", true
 	case strings.Contains(lower, "effort parameter"):
 		return "effort", true
 	case strings.Contains(lower, "thinking") && strings.Contains(lower, "not supported"):
@@ -100,7 +102,15 @@ func adapt(body []byte, adaptation string) ([]byte, bool, error) {
 	case adaptation == "effort":
 		return dropEffort(body)
 	case adaptation == "thinking":
-		return jsonbytes.RemoveField(body, "thinking")
+		out, removed, err := jsonbytes.RemoveField(body, "thinking")
+		if err != nil {
+			return nil, false, err
+		}
+		// Thinking-clearing context edits are invalid once thinking is off.
+		out, cleared, err := dropClearThinking(out)
+		return out, removed || cleared, err
+	case adaptation == "clear_thinking":
+		return dropClearThinking(body)
 	case adaptation == "system_messages":
 		return systemMessagesToUser(body)
 	case strings.HasPrefix(adaptation, "field:"):
@@ -134,6 +144,52 @@ func dropEffort(body []byte) ([]byte, bool, error) {
 		return nil, false, err
 	}
 	out, err := jsonbytes.SetField(body, "output_config", v)
+	return out, err == nil, err
+}
+
+// dropClearThinking removes clear_thinking_* edits from context_management,
+// and the whole field when no edit remains.
+func dropClearThinking(body []byte) ([]byte, bool, error) {
+	spans, err := jsonbytes.TopLevel(body)
+	if err != nil {
+		return nil, false, err
+	}
+	sp, ok := spans["context_management"]
+	if !ok {
+		return body, false, nil
+	}
+	var cm map[string]json.RawMessage
+	if err := json.Unmarshal(body[sp.Start:sp.End], &cm); err != nil {
+		return nil, false, err
+	}
+	var edits []json.RawMessage
+	if raw, ok := cm["edits"]; !ok || json.Unmarshal(raw, &edits) != nil {
+		return body, false, nil
+	}
+	kept := make([]json.RawMessage, 0, len(edits))
+	for _, e := range edits {
+		var head struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(e, &head) == nil && strings.HasPrefix(head.Type, "clear_thinking") {
+			continue
+		}
+		kept = append(kept, e)
+	}
+	if len(kept) == len(edits) {
+		return body, false, nil
+	}
+	if len(kept) == 0 {
+		return jsonbytes.RemoveField(body, "context_management")
+	}
+	if cm["edits"], err = json.Marshal(kept); err != nil {
+		return nil, false, err
+	}
+	v, err := json.Marshal(cm)
+	if err != nil {
+		return nil, false, err
+	}
+	out, err := jsonbytes.SetField(body, "context_management", v)
 	return out, err == nil, err
 }
 

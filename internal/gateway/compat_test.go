@@ -33,6 +33,8 @@ func TestRejectedFeaturesAreRemovedAndRemembered(t *testing.T) {
 			reject("This model does not support the effort parameter.")
 		case bytes.Contains(raw, []byte(`"thinking"`)):
 			reject("adaptive thinking is not supported on this model")
+		case bytes.Contains(raw, []byte("clear_thinking")):
+			reject("`clear_thinking_20251015` strategy requires `thinking` to be enabled or adaptive")
 		case bytes.Contains(raw, []byte(`"role":"system"`)):
 			reject("role 'system' is not supported on this model")
 		default:
@@ -41,6 +43,7 @@ func TestRejectedFeaturesAreRemovedAndRemembered(t *testing.T) {
 		}
 	})
 	body := `{"model":"intelly-claude-fast","max_tokens":1024,"stream":true,"thinking":{"type":"adaptive"},` +
+		`"context_management":{"edits":[{"type":"clear_thinking_20251015","keep":{"type":"thinking_turns","value":1}},{"type":"clear_tool_uses_20250919"}]},` +
 		`"output_config":{"effort":"high"},"messages":[{"role":"user","content":"hi"},{"role":"system","content":"be brief"}]}`
 
 	for range 2 {
@@ -53,7 +56,8 @@ func TestRejectedFeaturesAreRemovedAndRemembered(t *testing.T) {
 		t.Fatalf("upstream calls = %d, want 4 for the first request and 1 for the second", len(bodies))
 	}
 	last := bodies[4]
-	if strings.Contains(last, "effort") || strings.Contains(last, "thinking") || !strings.Contains(last, `{"role":"user","content":"be brief"}`) {
+	if strings.Contains(last, "effort") || strings.Contains(last, `"thinking"`) || strings.Contains(last, "clear_thinking") ||
+		!strings.Contains(last, "clear_tool_uses_20250919") || !strings.Contains(last, `{"role":"user","content":"be brief"}`) {
 		t.Fatalf("adapted body = %s", last)
 	}
 

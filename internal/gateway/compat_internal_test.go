@@ -7,13 +7,14 @@ import (
 
 func TestAdaptationFor(t *testing.T) {
 	cases := map[string]string{
-		"This model does not support the effort parameter.":         "effort",
-		"adaptive thinking is not supported on this model":          "thinking",
-		"role 'system' is not supported on this model":              "system_messages",
-		"context_management: Extra inputs are not permitted":        "field:context_management",
-		"output_config.task_budget: Extra inputs are not permitted": "field:output_config",
-		"messages.0.content: Extra inputs are not permitted":        "",
-		"max_tokens: 200000 > 64000, which is the maximum":          "",
+		"This model does not support the effort parameter.":                                "effort",
+		"adaptive thinking is not supported on this model":                                 "thinking",
+		"role 'system' is not supported on this model":                                     "system_messages",
+		"context_management: Extra inputs are not permitted":                               "field:context_management",
+		"output_config.task_budget: Extra inputs are not permitted":                        "field:output_config",
+		"messages.0.content: Extra inputs are not permitted":                               "",
+		"max_tokens: 200000 > 64000, which is the maximum":                                 "",
+		"`clear_thinking_20251015` strategy requires `thinking` to be enabled or adaptive": "clear_thinking",
 	}
 	for msg, want := range cases {
 		got, ok := adaptationFor(msg)
@@ -30,6 +31,9 @@ func TestAdapt(t *testing.T) {
 		{"effort", `{"model":"m","output_config":{"effort":"high"},"messages":[]}`, `{"model":"m","messages":[]}`},
 		{"effort", `{"output_config":{"effort":"low","format":{"type":"json"}},"model":"m"}`, `{"output_config":{"format":{"type":"json"}},"model":"m"}`},
 		{"thinking", `{"model":"m","thinking":{"type":"adaptive"}}`, `{"model":"m"}`},
+		{"thinking", `{"model":"m","thinking":{"type":"adaptive"},"context_management":{"edits":[{"type":"clear_thinking_20251015"}]}}`, `{"model":"m"}`},
+		{"clear_thinking", `{"context_management":{"edits":[{"type":"clear_thinking_20251015"},{"type":"clear_tool_uses_20250919"}]},"model":"m"}`,
+			`{"context_management":{"edits":[{"type":"clear_tool_uses_20250919"}]},"model":"m"}`},
 		{"system_messages", `{"messages":[{"role":"user","content":"hi"},{"role":"system","content":"be brief"}]}`,
 			`{"messages":[{"role":"user","content":"hi"},{"role":"user","content":"be brief"}]}`},
 		{"field:context_management", `{"model":"m","context_management":{"edits":[]}}`, `{"model":"m"}`},
