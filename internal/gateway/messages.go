@@ -129,10 +129,15 @@ func (s *Server) call(w http.ResponseWriter, r *http.Request, t target, cr clien
 	if err != nil {
 		return fail(http.StatusBadRequest, "invalid_request_error", "invalid request body: "+err.Error())
 	}
-	if upstream, err = dropAdvisorTools(t, upstream); err != nil {
+	upstream, droppedAdvisor, err := dropAdvisorTools(t, upstream)
+	if err != nil {
 		return fail(http.StatusBadRequest, "invalid_request_error", "invalid request body: "+err.Error())
 	}
-	return s.forward(w, r, t, upstream, cr.claudeAuth, cr.capture)
+	leg := s.forward(w, r, t, upstream, cr.claudeAuth, cr.capture)
+	if droppedAdvisor {
+		leg.Note = joinNote("advisor tool removed for "+t.model.ModelID, leg.Note)
+	}
+	return leg
 }
 
 func baseModel(r store.Route) int64 {
@@ -174,7 +179,7 @@ func (s *Server) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request_error", "invalid request body: "+err.Error())
 		return
 	}
-	if upstream, err = dropAdvisorTools(t, upstream); err != nil {
+	if upstream, _, err = dropAdvisorTools(t, upstream); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request_error", "invalid request body: "+err.Error())
 		return
 	}

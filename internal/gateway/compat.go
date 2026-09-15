@@ -25,6 +25,10 @@ var essentialFields = map[string]bool{
 	"tools": true, "tool_choice": true, "stream": true,
 }
 
+// Claude Code cannot check an advisor pairing for a route name, so a model
+// behind the route can reject the advisor that another model accepts.
+var advisorPairing = regexp.MustCompile(`'([^']+)' cannot be used as an advisor`)
+
 var extraInputs = regexp.MustCompile(`^([a-z_]+)(?:\.[^:]*)?: Extra inputs are not permitted`)
 
 // adaptationFor maps a 400 error message to the change that avoids it.
@@ -39,6 +43,12 @@ func adaptationFor(message string) (string, bool) {
 		return "thinking", true
 	case strings.Contains(lower, "role 'system'") || strings.Contains(lower, `role "system"`):
 		return "system_messages", true
+	}
+	if m := advisorPairing.FindStringSubmatch(message); m != nil {
+		return "advisor:" + m[1], true
+	}
+	if strings.Contains(strings.ToLower(message), "cannot be used as an advisor") {
+		return "advisor", true
 	}
 	if m := extraInputs.FindStringSubmatch(message); m != nil && !essentialFields[m[1]] {
 		return "field:" + m[1], true
@@ -113,6 +123,10 @@ func adapt(body []byte, adaptation string) ([]byte, bool, error) {
 		return dropClearThinking(body)
 	case adaptation == "system_messages":
 		return systemMessagesToUser(body)
+	case adaptation == "advisor":
+		return removeAdvisorTools(body, "")
+	case strings.HasPrefix(adaptation, "advisor:"):
+		return removeAdvisorTools(body, strings.TrimPrefix(adaptation, "advisor:"))
 	case strings.HasPrefix(adaptation, "field:"):
 		return jsonbytes.RemoveField(body, strings.TrimPrefix(adaptation, "field:"))
 	}

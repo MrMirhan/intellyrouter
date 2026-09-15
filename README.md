@@ -159,20 +159,20 @@ With `"consult": true` (the default), the executor gets one more tool, `ask_dire
 
 ### Claude Code advisor
 
-When the executors run on your Claude subscription, the gateway cannot add a tool to their requests. Claude Code has its own advisor tool for the same purpose: the model asks Claude Fable 5.1 when it is stuck or before a large change, and Anthropic runs the advisor on your plan. Turn on "Advisor" in the connect snippet, or set these values yourself:
+When the executors run on your Claude subscription, the gateway cannot add a tool to their requests. Claude Code has its own advisor tool for the same purpose: when the model is stuck or before a large change, it asks a second model, and Anthropic runs that advisor on your plan. Choose the advisor in the connect snippet, or set these values yourself (the model ID is an example):
 
 ```json
 {
-  "advisorModel": "claude-fable-5-1",
+  "advisorModel": "claude-opus-5",
   "env": { "CLAUDE_CODE_ENABLE_EXPERIMENTAL_ADVISOR_TOOL": "1" }
 }
 ```
 
-- Claude Code does not know route names, so it cannot check the advisor pairing. Use Fable 5.1, because every Claude model accepts it as an advisor.
-- The advisor works only when a Claude model serves the request. The connect snippet offers it only for routes whose models are all Claude models.
-- Advisor calls use your plan limits. The advisor tool is experimental in Claude Code.
+- Anthropic runs the advisor, so the advisor must be a model on an Anthropic provider. The connect snippet lists the enabled models of all providers as "model - provider" and offers the advisor only for routes whose models are all on Anthropic providers.
+- Claude Code does not know route names, so it cannot check whether each model of a route accepts the advisor. When a model rejects it with a 400 error, the gateway sends that request again without the advisor tool and remembers this for that model.
+- For providers other than Anthropic, the gateway removes the advisor tool from the request.
 - Anthropic reports the advisor tokens apart from the main call. The ledger records each advisor call as an Advisor leg with its own tokens and cost.
-- For other providers, the gateway removes the advisor tool from the request.
+- Advisor calls use your plan limits. The advisor tool is experimental in Claude Code.
 
 ## Costs and savings
 

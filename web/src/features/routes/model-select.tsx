@@ -1,10 +1,9 @@
-import { SubscriptionBadge } from "@/components/badges"
+import { CrownIcon } from "lucide-react"
+
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
@@ -27,15 +26,16 @@ export function ModelSelect({
   excludeSubscription?: boolean
   invalid?: boolean
 }) {
-  const groups = providers
-    .filter((provider) => !(excludeSubscription && provider.type === "anthropic-subscription"))
-    .map((provider) => ({
-      provider,
-      models: models
-        .filter((model) => model.provider_id === provider.id && (model.enabled || model.id === value))
-        .sort((a, b) => a.model_id.localeCompare(b.model_id)),
-    }))
-    .filter((group) => group.models.length > 0)
+  const providerById = new Map(providers.map((provider) => [provider.id, provider]))
+  const options = models
+    .filter((model) => model.enabled || model.id === value)
+    .map((model) => ({ model, provider: providerById.get(model.provider_id) }))
+    .filter(({ provider }) => !(excludeSubscription && provider?.type === "anthropic-subscription"))
+    .sort(
+      (a, b) =>
+        a.model.model_id.localeCompare(b.model.model_id) ||
+        (a.provider?.name ?? "").localeCompare(b.provider?.name ?? ""),
+    )
 
   return (
     <Select value={value ? String(value) : ""} onValueChange={(next) => onChange(Number(next))}>
@@ -43,22 +43,18 @@ export function ModelSelect({
         <SelectValue placeholder="Select a model" />
       </SelectTrigger>
       <SelectContent>
-        {groups.length === 0 ? (
+        {options.length === 0 ? (
           <p className="px-2 py-1.5 text-sm text-muted-foreground">No enabled models</p>
         ) : (
-          groups.map((group) => (
-            <SelectGroup key={group.provider.id}>
-              <SelectLabel className="flex items-center gap-2">
-                {group.provider.name}
-                {group.provider.type === "anthropic-subscription" && <SubscriptionBadge />}
-              </SelectLabel>
-              {group.models.map((model) => (
-                <SelectItem key={model.id} value={String(model.id)}>
-                  <span className="font-mono text-xs">{model.model_id}</span>
-                  {!model.enabled && <span className="text-muted-foreground">(disabled)</span>}
-                </SelectItem>
-              ))}
-            </SelectGroup>
+          options.map(({ model, provider }) => (
+            <SelectItem key={model.id} value={String(model.id)}>
+              <span className="font-mono text-xs">{model.model_id}</span>
+              <span className="text-muted-foreground">- {provider?.name ?? `provider ${model.provider_id}`}</span>
+              {provider?.type === "anthropic-subscription" && (
+                <CrownIcon aria-label="Claude subscription" className="size-3.5 text-muted-foreground" />
+              )}
+              {!model.enabled && <span className="text-muted-foreground">(disabled)</span>}
+            </SelectItem>
           ))
         )}
       </SelectContent>
