@@ -30,6 +30,7 @@ import { routeModelIds } from "@/lib/routes"
 import type { Route } from "@/lib/types"
 
 type EnvVar = [name: string, value: string]
+type PickerRow = { model: string; label: string; description: string }
 type SnippetFormat = "shell" | "settings"
 
 const betasEnv: EnvVar[] = [["CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", "1"]]
@@ -38,9 +39,16 @@ function exportLines(env: EnvVar[]): string {
   return env.map(([name, value]) => `export ${name}=${shellQuote(value)}`).join("\n")
 }
 
-function settingsJSON(env: EnvVar[], advisorModel: string): string {
-  const envBlock = Object.fromEntries(env)
-  return JSON.stringify(advisorModel ? { advisorModel, env: envBlock } : { env: envBlock }, null, 2)
+function settingsJSON(env: EnvVar[], advisorModel: string, pickerRows: PickerRow[]): string {
+  return JSON.stringify(
+    {
+      ...(advisorModel ? { advisorModel } : {}),
+      env: Object.fromEntries(env),
+      ...(pickerRows.length > 0 ? { modelPicker: { options: pickerRows } } : {}),
+    },
+    null,
+    2,
+  )
 }
 
 function shellQuote(value: string): string {
@@ -68,17 +76,19 @@ function EnvSnippet({
   format,
   label,
   advisorModel = "",
+  pickerRows = [],
 }: {
   env: EnvVar[]
   format: SnippetFormat
   label: string
   advisorModel?: string
+  pickerRows?: PickerRow[]
 }) {
   const start = advisorModel ? `\n# Start Claude Code with: claude --advisor ${advisorModel}` : ""
   return format === "shell" ? (
     <Snippet text={exportLines(env) + start} label={`${label} commands`} />
   ) : (
-    <Snippet text={settingsJSON(env, advisorModel)} label={`${label} settings.json`} />
+    <Snippet text={settingsJSON(env, advisorModel, pickerRows)} label={`${label} settings.json`} />
   )
 }
 
@@ -156,6 +166,12 @@ function ConnectBody({ route }: { route: Route }) {
   // Claude Code strips "[1m]" before it sends the model name, and sizes the session at 1M
   // instead of the 200K it assumes for names it does not know.
   const slot = (name: string) => (longContext ? `${name}[1m]` : name)
+  const strategyByName = new Map((routes.data ?? []).map((item) => [item.name, item.strategy]))
+  const pickerRows: PickerRow[] = routeNames.map((name) => ({
+    model: slot(name),
+    label: name,
+    description: `IntellyRouter ${strategyByName.get(name) ?? route.strategy} route`,
+  }))
   const claudeProviders = new Set(
     (providers.data ?? [])
       .filter((provider) => provider.type === "anthropic" || provider.type === "anthropic-subscription")
@@ -391,7 +407,19 @@ function ConnectBody({ route }: { route: Route }) {
             Claude Code keeps your own Claude login, and the gateway key travels in a separate
             header. Use this mode when a tier runs on your Claude subscription.
           </p>
-          <EnvSnippet env={subscriptionEnv} format={format} label="Claude subscription mode" advisorModel={advisorModel} />
+          <EnvSnippet
+            env={subscriptionEnv}
+            format={format}
+            label="Claude subscription mode"
+            advisorModel={advisorModel}
+            pickerRows={pickerRows}
+          />
+          <p className="text-sm text-muted-foreground">
+            Claude Code does not run model discovery with a Claude login. The settings.json format
+            adds every route to <code>/model</code> with <code>modelPicker</code>. Claude Code
+            reads <code>modelPicker</code> only from user settings (<code>~/.claude/settings.json</code>),
+            not from project settings.
+          </p>
           <Alert>
             <InfoIcon />
             <AlertTitle>Do not set ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY</AlertTitle>
