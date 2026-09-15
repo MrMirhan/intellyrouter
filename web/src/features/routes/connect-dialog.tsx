@@ -178,9 +178,8 @@ function ConnectBody({ route }: { route: Route }) {
       .map((provider) => provider.id),
   )
   const routeModels = routeModelIds(route).map((id) => (models.data ?? []).find((model) => model.id === id))
-  // Other providers reject the advisor server tool.
-  const advisorAvailable =
-    routeModels.length > 0 && routeModels.every((model) => model !== undefined && claudeProviders.has(model.provider_id))
+  // Other providers reject the advisor server tool, so the gateway removes it from their steps.
+  const advisorAvailable = routeModels.some((model) => model !== undefined && claudeProviders.has(model.provider_id))
   const providerById = new Map((providers.data ?? []).map((provider) => [provider.id, provider]))
   const advisorChoices = (models.data ?? [])
     .filter((model) => model.enabled)
@@ -332,8 +331,8 @@ function ConnectBody({ route }: { route: Route }) {
           <Label htmlFor="connect-advisor">Advisor</Label>
           <p className="text-sm text-muted-foreground">
             {advisorAvailable
-              ? "Claude Code gives the model an advisor tool. When the model is stuck, or before a large change, it asks the advisor, which reads the whole session. Anthropic runs the advisor, so it must be a model on an Anthropic provider. When the model that serves a step rejects this advisor, the gateway retries that step without it. Advisor calls use your plan limits."
-              : "Available when every model in the route is a Claude model. Other providers do not support the advisor tool."}
+              ? "Claude Code gives the model an advisor tool. When the model is stuck, or before a large change, it asks the advisor, which reads the whole session. Anthropic runs the advisor, so it must be a model on an Anthropic provider. When the model that serves a step rejects this advisor, the gateway retries that step without it. Steps on other providers run without the advisor. Advisor calls use your plan limits."
+              : "Available when a model in the route is on an Anthropic provider. Other providers do not support the advisor tool."}
           </p>
         </div>
         <Select value={advisorAvailable ? advisor : "off"} onValueChange={setAdvisor} disabled={!advisorAvailable}>

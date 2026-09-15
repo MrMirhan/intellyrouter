@@ -186,7 +186,7 @@ When the executors run on your Claude subscription, the gateway cannot add a too
 }
 ```
 
-- Anthropic runs the advisor, so the advisor must be a model on an Anthropic provider. The connect snippet lists the enabled models of all providers as "model - provider" and offers the advisor only for routes whose models are all on Anthropic providers.
+- Anthropic runs the advisor, so the advisor must be a model on an Anthropic provider. The connect snippet lists the enabled models of all providers as "model - provider" and offers the advisor for routes with at least one model on an Anthropic provider. Steps on other providers run without the advisor tool: the gateway removes it from those requests.
 - Claude Code does not know route names, so it cannot check whether each model of a route accepts the advisor. When a model rejects it with a 400 error, the gateway sends that request again without the advisor tool and remembers this for that model.
 - For providers other than Anthropic, the gateway removes the advisor tool from the request.
 - Anthropic reports the advisor tokens apart from the main call. The ledger records each advisor call as an Advisor leg with its own tokens and cost.
