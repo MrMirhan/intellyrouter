@@ -224,3 +224,27 @@ func TestGuidedExecutorAsksDirector(t *testing.T) {
 		t.Fatalf("legs = %+v", legs)
 	}
 }
+
+func TestGuidedSubscriptionDirectorReviewsOnce(t *testing.T) {
+	e, calls := setupGuided(t, provider.AnthropicSubscription)
+	const editAndTest = `,{"role":"assistant","content":[{"type":"tool_use","id":"e1","name":"Edit","input":{"file_path":"calc.go"}},{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"go test ./..."}}]},` +
+		`{"role":"user","content":[{"type":"tool_result","tool_use_id":"e1","content":"updated"},{"type":"tool_result","tool_use_id":"t1","content":"ok  \tcalc\t0.2s"}]}`
+	const vet = `,{"role":"assistant","content":[{"type":"tool_use","id":"v1","name":"Bash","input":{"command":"go vet ./..."}}]},` +
+		`{"role":"user","content":[{"type":"tool_result","tool_use_id":"v1","content":""}]}`
+	sendGuided(t, e, guidedPrompt)
+	sendGuided(t, e, guidedPrompt+editAndTest)
+	sendGuided(t, e, guidedPrompt+editAndTest+vet)
+
+	want := []guidedCall{
+		{model: "claude-fable-5-1", auth: claudeLogin, stream: true},
+		{model: "claude-fable-5-1", auth: claudeLogin, stream: true},
+		{model: "deepseek-v4-flash", auth: "Bearer sk-deepseek", stream: true},
+	}
+	if got := calls(); !slices.Equal(got, want) {
+		t.Fatalf("upstream calls:\n got %+v\nwant %+v", got, want)
+	}
+	legs := requestLegs(t, e.store)
+	if !strings.Contains(legs[1][0].Note, "director step: review after passing tests") {
+		t.Fatalf("second request legs = %+v", legs[1])
+	}
+}

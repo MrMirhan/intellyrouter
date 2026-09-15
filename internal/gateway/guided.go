@@ -59,6 +59,11 @@ func (s *Server) guided(w http.ResponseWriter, r *http.Request, route store.Rout
 	}
 
 	if dec.Reason != "" && director.config.Type == provider.AnthropicSubscription {
+		// The director takes the review step itself, so the turn counts as reviewed;
+		// otherwise every later passing step would hand the work to it again.
+		if dec.Reason == guided.ReasonReview {
+			st.Reviewed = true
+		}
 		s.guidedTurns.Put(key, st)
 		leg := s.call(w, r, director, cr)
 		leg.Role = ledger.RoleDirector
