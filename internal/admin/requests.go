@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -28,6 +29,12 @@ type legJSON struct {
 	Note             string  `json:"note"`
 }
 
+type legModelJSON struct {
+	Role    string `json:"role"`
+	Model   string `json:"model"`
+	Billing string `json:"billing"`
+}
+
 type requestJSON struct {
 	ID                   int64     `json:"id"`
 	TS                   int64     `json:"ts"`
@@ -44,7 +51,11 @@ type requestJSON struct {
 	SubscriptionValueUSD float64   `json:"subscription_value_usd"`
 	ReferenceCostUSD     float64   `json:"reference_cost_usd"`
 	LatencyMS            int64     `json:"latency_ms"`
+	Captured             bool      `json:"captured"`
 	Legs                 []legJSON `json:"legs,omitempty"`
+	// Models lists the legs in call order; the last one produced the answer.
+	Models      []legModelJSON `json:"models"`
+	AnswerModel string         `json:"answer_model"`
 }
 
 func toRequestJSON(r store.Request) requestJSON {
@@ -52,6 +63,7 @@ func toRequestJSON(r store.Request) requestJSON {
 		ID: r.ID, TS: r.TS, SessionID: r.SessionID, AgentID: r.AgentID, Route: r.Route, Strategy: r.Strategy,
 		ClientModel: r.ClientModel, Stream: r.Stream, Status: r.Status, HTTPStatus: r.HTTPStatus, Error: r.Error,
 		CostUSD: r.CostUSD, SubscriptionValueUSD: r.SubscriptionValueUSD, ReferenceCostUSD: r.ReferenceCostUSD, LatencyMS: r.LatencyMS,
+		Captured: r.Captured, Models: make([]legModelJSON, 0, len(r.Legs)),
 	}
 	for _, l := range r.Legs {
 		out.Legs = append(out.Legs, legJSON{
@@ -59,7 +71,16 @@ func toRequestJSON(r store.Request) requestJSON {
 			InputTokens: l.InputTokens, OutputTokens: l.OutputTokens, CacheReadTokens: l.CacheReadTokens, CacheWriteTokens: l.CacheWriteTokens,
 			CostUSD: l.CostUSD, LatencyMS: l.LatencyMS, Status: l.Status, StopReason: l.StopReason, Note: l.Note,
 		})
+		out.Models = append(out.Models, legModelJSON{Role: l.Role, Model: l.Model, Billing: l.Billing})
+		out.AnswerModel = l.Model
 	}
+	return out
+}
+
+// toRequestItem is the list form of a request: who answered, without leg details.
+func toRequestItem(r store.Request) requestJSON {
+	out := toRequestJSON(r)
+	out.Legs = nil
 	return out
 }
 
@@ -75,9 +96,19 @@ func (a *API) listRequests(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
+	ids := make([]int64, len(items))
+	for i, it := range items {
+		ids[i] = it.ID
+	}
+	legs, err := a.store.RequestLegs(r.Context(), ids)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
 	out := make([]requestJSON, 0, len(items))
 	for _, it := range items {
-		out = append(out, toRequestJSON(it))
+		it.Legs = legs[it.ID]
+		out = append(out, toRequestItem(it))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": out, "total": total})
 }
@@ -110,29 +141,48 @@ func (a *API) getSubscriptionLimits(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.WriteString(w, v)
 }
 
+func (a *API) referenceModel(ctx context.Context) (string, error) {
+	ref, ok, err := a.store.Setting(ctx, ledger.ReferenceModelSetting)
+	if err == nil && !ok {
+		ref = ledger.DefaultReferenceModel
+	}
+	return ref, err
+}
+
 func (a *API) getSettings(w http.ResponseWriter, r *http.Request) {
-	ref, ok, err := a.store.Setting(r.Context(), ledger.ReferenceModelSetting)
+	ref, err := a.referenceModel(r.Context())
 	if err != nil {
 		a.fail(w, err)
 		return
-	}
-	if !ok {
-		ref = ledger.DefaultReferenceModel
 	}
 	fallback, _, err := a.store.Setting(r.Context(), store.FallbackRouteSetting)
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"reference_model": ref, "fallback_route": fallback})
+	capture, days, err := a.store.CaptureSettings(r.Context())
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"reference_model": ref, "fallback_route": fallback,
+		"capture_content": capture, "capture_retention_days": days,
+	})
 }
 
 func (a *API) putSettings(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		ReferenceModel *string `json:"reference_model"`
-		FallbackRoute  *string `json:"fallback_route"`
+		ReferenceModel       *string `json:"reference_model"`
+		FallbackRoute        *string `json:"fallback_route"`
+		CaptureContent       *bool   `json:"capture_content"`
+		CaptureRetentionDays *int    `json:"capture_retention_days"`
 	}
 	if !decode(w, r, &in) {
+		return
+	}
+	if d := in.CaptureRetentionDays; d != nil && (*d < 1 || *d > store.MaxCaptureRetentionDays) {
+		writeError(w, http.StatusBadRequest, "capture_retention_days must be between 1 and "+strconv.Itoa(store.MaxCaptureRetentionDays))
 		return
 	}
 	if in.FallbackRoute != nil {
@@ -158,6 +208,18 @@ func (a *API) putSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := a.store.SetSetting(r.Context(), ledger.ReferenceModelSetting, v); err != nil {
+			a.fail(w, err)
+			return
+		}
+	}
+	if in.CaptureContent != nil {
+		if err := a.store.SetSetting(r.Context(), store.CaptureContentSetting, strconv.FormatBool(*in.CaptureContent)); err != nil {
+			a.fail(w, err)
+			return
+		}
+	}
+	if in.CaptureRetentionDays != nil {
+		if err := a.store.SetSetting(r.Context(), store.CaptureRetentionDaysSetting, strconv.Itoa(*in.CaptureRetentionDays)); err != nil {
 			a.fail(w, err)
 			return
 		}

@@ -43,7 +43,7 @@ func (s *Server) escalate(w http.ResponseWriter, r *http.Request, route store.Ro
 		labels[i] = t.Label
 	}
 	classify := func(ctx context.Context) (bool, string, error) {
-		up, why, leg, err := s.classify(ctx, rules.Classifier.ModelID, turn)
+		up, why, leg, err := s.classify(ctx, rules.Classifier.ModelID, turn, cr.capture)
 		if leg.Model != "" {
 			leg.Role = ledger.RoleClassifier
 			e.Legs = append(e.Legs, leg)
@@ -80,7 +80,7 @@ func (s *Server) escalate(w http.ResponseWriter, r *http.Request, route store.Ro
 
 // classify asks the route's classifier model about the turn. The gateway
 // makes this call itself, so it never uses a Claude subscription login.
-func (s *Server) classify(ctx context.Context, modelID int64, turn escalate.Turn) (bool, string, ledger.Leg, error) {
+func (s *Server) classify(ctx context.Context, modelID int64, turn escalate.Turn, capture bool) (bool, string, ledger.Leg, error) {
 	ctx, cancel := context.WithTimeout(ctx, classifyTimeout)
 	defer cancel()
 	t, err := s.resolve(ctx, modelID)
@@ -94,6 +94,9 @@ func (s *Server) classify(ctx context.Context, modelID int64, turn escalate.Turn
 	start := time.Now()
 	message, usage, err := s.complete(ctx, t, escalate.ClassifierRequest(t.model.ModelID, turn))
 	leg.Latency, leg.Usage = time.Since(start), usage
+	if capture {
+		leg.Output = message
+	}
 	if err != nil {
 		leg.Status, leg.Error = ledger.StatusError, err.Error()
 		return false, "", leg, err

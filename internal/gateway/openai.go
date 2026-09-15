@@ -20,7 +20,7 @@ const pingInterval = 15 * time.Second
 
 // forwardOpenAI translates the request for a Chat Completions upstream and the
 // response back to Anthropic format. It writes the client response in every case.
-func (s *Server) forwardOpenAI(w http.ResponseWriter, r *http.Request, t target, body []byte, stream bool) ledger.Leg {
+func (s *Server) forwardOpenAI(w http.ResponseWriter, r *http.Request, t target, body []byte, stream, capture bool) ledger.Leg {
 	leg := t.newLeg()
 	start := time.Now()
 	done := func(status string, httpStatus int, msg string) ledger.Leg {
@@ -55,7 +55,7 @@ func (s *Server) forwardOpenAI(w http.ResponseWriter, r *http.Request, t target,
 	}
 	defer resp.Body.Close()
 
-	var tr ledger.AnthropicTracker
+	tr := ledger.AnthropicTracker{Capture: capture}
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 		out := translate.Error(resp.StatusCode, raw)
@@ -84,7 +84,7 @@ func (s *Server) forwardOpenAI(w http.ResponseWriter, r *http.Request, t target,
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(out)
 		tr.Response(http.StatusOK, out)
-		leg.Usage, leg.StopReason = tr.Usage, tr.StopReason
+		leg.Usage, leg.StopReason, leg.Output = tr.Usage, tr.StopReason, tr.Message()
 		return done(ledger.StatusOK, http.StatusOK, "")
 	}
 
@@ -100,7 +100,7 @@ func (s *Server) forwardOpenAI(w http.ResponseWriter, r *http.Request, t target,
 	err = translateStream(resp.Body, ts)
 	stopPings()
 	s.signatures.put(ts.ThoughtSignatures())
-	leg.Usage, leg.StopReason = tr.Usage, tr.StopReason
+	leg.Usage, leg.StopReason, leg.Output = tr.Usage, tr.StopReason, tr.Message()
 
 	var upErr *translate.UpstreamError
 	switch {

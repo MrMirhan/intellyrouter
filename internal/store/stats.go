@@ -59,6 +59,18 @@ type Stats struct {
 	Series  []StatsPoint
 	ByRoute []RouteStats
 	ByModel []ModelStats
+	Work    WorkTotals
+}
+
+// WorkTotals splits spend into API cost and subscription value and sums the
+// tokens of the legs that did the client's work.
+type WorkTotals struct {
+	APIUSD               float64
+	SubscriptionValueUSD float64
+	InputTokens          int64
+	OutputTokens         int64
+	CacheReadTokens      int64
+	CacheWriteTokens     int64
 }
 
 const (
@@ -66,6 +78,8 @@ const (
 	// API tokens exclude classifier and director calls, which are routing overhead, not work.
 	apiTokens          = `COALESCE(SUM(CASE WHEN l.billing = 'api' AND l.role NOT IN ('classifier', 'director') THEN ` + legTokens + ` END), 0)`
 	subscriptionTokens = `COALESCE(SUM(CASE WHEN l.billing = 'subscription' THEN ` + legTokens + ` END), 0)`
+	// A subscription director leg is a Claude Code step; an API director leg is a consult the gateway made.
+	workLeg = `l.role != 'classifier' AND NOT (l.role = 'director' AND l.billing = 'api')`
 )
 
 // Stats aggregates requests with ts >= since (Unix ms) into buckets of bucketMS.
@@ -169,7 +183,26 @@ GROUP BY l.provider, l.model, l.billing ORDER BY COUNT(*) DESC, l.model`,
 	if err != nil {
 		return Stats{}, err
 	}
+	if st.Work, err = s.workTotals(ctx, "r.ts >= ?", since); err != nil {
+		return Stats{}, err
+	}
 	return st, nil
+}
+
+// workTotals sums the legs of the requests matched by where. Legs cost the
+// API-equivalent price, so subscription legs give the subscription value.
+func (s *Store) workTotals(ctx context.Context, where string, args ...any) (WorkTotals, error) {
+	var w WorkTotals
+	err := s.db.QueryRowContext(ctx, `
+SELECT COALESCE(SUM(CASE WHEN l.billing = 'subscription' THEN 0 ELSE l.cost_usd END), 0),
+  COALESCE(SUM(CASE WHEN l.billing = 'subscription' THEN l.cost_usd ELSE 0 END), 0),
+  COALESCE(SUM(CASE WHEN `+workLeg+` THEN l.input_tokens END), 0),
+  COALESCE(SUM(CASE WHEN `+workLeg+` THEN l.output_tokens END), 0),
+  COALESCE(SUM(CASE WHEN `+workLeg+` THEN l.cache_read_tokens END), 0),
+  COALESCE(SUM(CASE WHEN `+workLeg+` THEN l.cache_write_tokens END), 0)
+FROM legs l JOIN requests r ON r.id = l.request_id WHERE `+where, args...).Scan(
+		&w.APIUSD, &w.SubscriptionValueUSD, &w.InputTokens, &w.OutputTokens, &w.CacheReadTokens, &w.CacheWriteTokens)
+	return w, err
 }
 
 func (s *Store) each(ctx context.Context, query string, args []any, scan func(*sql.Rows) error) error {

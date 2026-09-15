@@ -29,6 +29,8 @@ type clientRequest struct {
 	body       []byte
 	stream     bool
 	claudeAuth string
+	// capture keeps the output of each leg for the ledger.
+	capture bool
 }
 
 var errDisabled = errors.New("model or provider is disabled")
@@ -76,7 +78,10 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	e.Route, e.Strategy, e.ClientModel, e.Stream = route.Name, route.Strategy, meta.Model, meta.Stream
-	cr := clientRequest{body: body, stream: meta.Stream, claudeAuth: claudeAuth}
+	cr := clientRequest{body: body, stream: meta.Stream, claudeAuth: claudeAuth, capture: s.captureContent(r.Context())}
+	if cr.capture {
+		e.Input = body
+	}
 
 	switch route.Strategy {
 	case store.StrategyDirect:
@@ -118,13 +123,13 @@ func (s *Server) call(w http.ResponseWriter, r *http.Request, t target, cr clien
 		return fail(http.StatusUnauthorized, "authentication_error", errNoClaudeLogin)
 	}
 	if t.config.Type.Format() == provider.FormatOpenAI {
-		return s.forwardOpenAI(w, r, t, cr.body, cr.stream)
+		return s.forwardOpenAI(w, r, t, cr.body, cr.stream, cr.capture)
 	}
 	upstream, err := withModel(cr.body, t.model.ModelID)
 	if err != nil {
 		return fail(http.StatusBadRequest, "invalid_request_error", "invalid request body: "+err.Error())
 	}
-	return s.forward(w, r, t, upstream, cr.claudeAuth)
+	return s.forward(w, r, t, upstream, cr.claudeAuth, cr.capture)
 }
 
 func baseModel(r store.Route) int64 {
@@ -166,7 +171,7 @@ func (s *Server) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request_error", "invalid request body: "+err.Error())
 		return
 	}
-	s.forward(w, r, t, upstream, claudeAuth)
+	s.forward(w, r, t, upstream, claudeAuth, false)
 }
 
 func readRequest(w http.ResponseWriter, r *http.Request) ([]byte, requestMeta, bool) {

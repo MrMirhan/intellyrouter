@@ -74,6 +74,17 @@ func run() error {
 	}
 	evals := eval.NewManager(st, *evalTasks, localURL(*addr), *claude, log)
 
+	pruned := make(chan struct{})
+	go func() {
+		defer close(pruned)
+		pruneContent(ctx, st, log)
+	}()
+	// The pruner must stop before the store closes.
+	defer func() {
+		stop()
+		<-pruned
+	}()
+
 	client := &http.Client{}
 	mux := http.NewServeMux()
 	gateway.New(st, ledger.NewRecorder(st, log), client, log).Register(mux)
@@ -102,6 +113,27 @@ func run() error {
 		return err
 	}
 	return nil
+}
+
+// pruneContent deletes captured content older than the retention setting once
+// at startup and then every hour until ctx ends.
+func pruneContent(ctx context.Context, st *store.Store, log *slog.Logger) {
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		_, days, err := st.CaptureSettings(ctx)
+		if err == nil {
+			err = st.PruneContent(ctx, time.Now().AddDate(0, 0, -days).UnixMilli())
+		}
+		if err != nil && ctx.Err() == nil {
+			log.Warn("prune captured content", "err", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 func notFound(w http.ResponseWriter, _ *http.Request) {

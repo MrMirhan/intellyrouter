@@ -2,10 +2,12 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"intellyrouter/internal/escalate"
@@ -23,10 +25,20 @@ type Server struct {
 	compat      *compat
 	guidedTurns *guided.Tracker
 	signatures  *signatureCache
+	capture     captureFlag
 }
 
 // A turn decision outlives any realistic tool loop.
 const turnTTL = 6 * time.Hour
+
+// captureRefresh bounds how long a changed capture_content setting takes to apply.
+const captureRefresh = 5 * time.Second
+
+type captureFlag struct {
+	mu      sync.Mutex
+	on      bool
+	checked time.Time
+}
 
 func New(st *store.Store, rec *ledger.Recorder, client *http.Client, log *slog.Logger) *Server {
 	return &Server{
@@ -41,6 +53,24 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/models", s.handleModels)
 	// Claude Code sends a best-effort connection-warming probe here.
 	mux.HandleFunc("HEAD /api/hello", func(http.ResponseWriter, *http.Request) {})
+}
+
+// captureContent reports whether request content is captured. It reads the
+// setting at most once per captureRefresh.
+func (s *Server) captureContent(ctx context.Context) bool {
+	c := &s.capture
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.checked.IsZero() && time.Since(c.checked) < captureRefresh {
+		return c.on
+	}
+	if on, _, err := s.store.CaptureSettings(ctx); err != nil {
+		s.log.Warn("read capture setting", "err", err)
+	} else {
+		c.on = on
+	}
+	c.checked = time.Now()
+	return c.on
 }
 
 const keyHeader = "X-Intelly-Key"

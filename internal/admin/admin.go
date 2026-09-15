@@ -60,6 +60,12 @@ func (a *API) Register(mux *http.ServeMux) {
 
 		{"GET /api/admin/requests", a.listRequests},
 		{"GET /api/admin/requests/{id}", a.getRequest},
+		{"GET /api/admin/requests/{id}/content", a.getRequestContent},
+		{"GET /api/admin/requests/{id}/export", a.exportRequest},
+
+		{"GET /api/admin/sessions", a.listSessions},
+		{"GET /api/admin/sessions/{id}", a.getSession},
+		{"GET /api/admin/sessions/{id}/export", a.exportSession},
 
 		{"GET /api/admin/stats", a.getStats},
 		{"GET /api/admin/subscription/limits", a.getSubscriptionLimits},

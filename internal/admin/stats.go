@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"intellyrouter/internal/ledger"
 	"intellyrouter/internal/store"
 )
 
@@ -18,22 +19,23 @@ var statsRanges = map[string]statsRange{
 }
 
 type statsTotalsJSON struct {
-	Requests             int64   `json:"requests"`
-	Errors               int64   `json:"errors"`
-	EscalateRequests     int64   `json:"escalate_requests"`
-	EscalatedRequests    int64   `json:"escalated_requests"`
-	CostUSD              float64 `json:"cost_usd"`
-	SubscriptionValueUSD float64 `json:"subscription_value_usd"`
-	ReferenceCostUSD     float64 `json:"reference_cost_usd"`
-	SavingsUSD           float64 `json:"savings_usd"`
-	InputTokens          int64   `json:"input_tokens"`
-	OutputTokens         int64   `json:"output_tokens"`
-	CacheReadTokens      int64   `json:"cache_read_tokens"`
-	CacheWriteTokens     int64   `json:"cache_write_tokens"`
-	APITokens            int64   `json:"api_tokens"`
-	SubscriptionTokens   int64   `json:"subscription_tokens"`
-	ClassifierCostUSD    float64 `json:"classifier_cost_usd"`
-	DirectorCostUSD      float64 `json:"director_cost_usd"`
+	Requests             int64          `json:"requests"`
+	Errors               int64          `json:"errors"`
+	EscalateRequests     int64          `json:"escalate_requests"`
+	EscalatedRequests    int64          `json:"escalated_requests"`
+	CostUSD              float64        `json:"cost_usd"`
+	SubscriptionValueUSD float64        `json:"subscription_value_usd"`
+	ReferenceCostUSD     float64        `json:"reference_cost_usd"`
+	SavingsUSD           float64        `json:"savings_usd"`
+	InputTokens          int64          `json:"input_tokens"`
+	OutputTokens         int64          `json:"output_tokens"`
+	CacheReadTokens      int64          `json:"cache_read_tokens"`
+	CacheWriteTokens     int64          `json:"cache_write_tokens"`
+	APITokens            int64          `json:"api_tokens"`
+	SubscriptionTokens   int64          `json:"subscription_tokens"`
+	ClassifierCostUSD    float64        `json:"classifier_cost_usd"`
+	DirectorCostUSD      float64        `json:"director_cost_usd"`
+	Comparison           comparisonJSON `json:"comparison"`
 }
 
 type statsPointJSON struct {
@@ -76,6 +78,56 @@ type statsJSON struct {
 	ByModel  []modelStatsJSON `json:"by_model"`
 }
 
+type workTokensJSON struct {
+	Input      int64 `json:"input"`
+	Output     int64 `json:"output"`
+	CacheRead  int64 `json:"cache_read"`
+	CacheWrite int64 `json:"cache_write"`
+}
+
+type modelCostJSON struct {
+	Model   string  `json:"model"`
+	CostUSD float64 `json:"cost_usd"`
+}
+
+// comparisonJSON sets what the routed requests cost next to one model serving
+// all of their work.
+type comparisonJSON struct {
+	ActualUSD            float64         `json:"actual_usd"`
+	APIUSD               float64         `json:"api_usd"`
+	SubscriptionValueUSD float64         `json:"subscription_value_usd"`
+	ReferenceModel       string          `json:"reference_model"`
+	WorkTokens           workTokensJSON  `json:"work_tokens"`
+	SingleModel          []modelCostJSON `json:"single_model"`
+}
+
+// comparisonModels are priced after the reference model.
+var comparisonModels = []string{"claude-fable-5-1", "claude-opus-5", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5"}
+
+// newComparison prices the work tokens on the reference model and the
+// comparison models with known prices. The actual cost includes routing overhead.
+func newComparison(reference string, w store.WorkTotals) comparisonJSON {
+	out := comparisonJSON{
+		ActualUSD:            w.APIUSD + w.SubscriptionValueUSD,
+		APIUSD:               w.APIUSD,
+		SubscriptionValueUSD: w.SubscriptionValueUSD,
+		ReferenceModel:       reference,
+		WorkTokens:           workTokensJSON{Input: w.InputTokens, Output: w.OutputTokens, CacheRead: w.CacheReadTokens, CacheWrite: w.CacheWriteTokens},
+		SingleModel:          []modelCostJSON{},
+	}
+	usage := ledger.Usage{Input: w.InputTokens, Output: w.OutputTokens, CacheRead: w.CacheReadTokens, CacheWrite: w.CacheWriteTokens}
+	seen := make(map[string]bool)
+	for _, model := range append([]string{reference}, comparisonModels...) {
+		p, ok := ledger.BuiltinPrice(model)
+		if !ok || seen[model] {
+			continue
+		}
+		seen[model] = true
+		out.SingleModel = append(out.SingleModel, modelCostJSON{Model: model, CostUSD: p.Cost(usage)})
+	}
+	return out
+}
+
 func (a *API) getStats(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Query().Get("range")
 	if name == "" {
@@ -93,10 +145,15 @@ func (a *API) getStats(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toStatsJSON(name, since, bucket, st))
+	ref, err := a.referenceModel(r.Context())
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toStatsJSON(name, since, bucket, st, ref))
 }
 
-func toStatsJSON(name string, since, bucket int64, st store.Stats) statsJSON {
+func toStatsJSON(name string, since, bucket int64, st store.Stats, reference string) statsJSON {
 	t := st.Totals
 	out := statsJSON{
 		Range: name, Since: since, BucketMS: bucket,
@@ -105,7 +162,7 @@ func toStatsJSON(name string, since, bucket int64, st store.Stats) statsJSON {
 			CostUSD: t.CostUSD, SubscriptionValueUSD: t.SubscriptionValueUSD, ReferenceCostUSD: t.ReferenceCostUSD, SavingsUSD: t.SavingsUSD,
 			InputTokens: t.InputTokens, OutputTokens: t.OutputTokens, CacheReadTokens: t.CacheReadTokens, CacheWriteTokens: t.CacheWriteTokens,
 			APITokens: t.APITokens, SubscriptionTokens: t.SubscriptionTokens, ClassifierCostUSD: t.ClassifierCostUSD,
-			DirectorCostUSD: t.DirectorCostUSD,
+			DirectorCostUSD: t.DirectorCostUSD, Comparison: newComparison(reference, st.Work),
 		},
 		Series:  make([]statsPointJSON, 0, len(st.Series)),
 		ByRoute: make([]routeStatsJSON, 0, len(st.ByRoute)),

@@ -34,7 +34,7 @@ var skipResponseHeaders = map[string]bool{
 
 // forward sends body to an Anthropic-format upstream and relays the response
 // to the client. It writes the client response in every case.
-func (s *Server) forward(w http.ResponseWriter, r *http.Request, t target, body []byte, claudeAuth string) ledger.Leg {
+func (s *Server) forward(w http.ResponseWriter, r *http.Request, t target, body []byte, claudeAuth string, capture bool) ledger.Leg {
 	leg := t.newLeg()
 	start := time.Now()
 	body, adapted := s.compat.apply(t.model.ID, body)
@@ -74,13 +74,14 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, t target, body 
 		leg.Note = "adapted for " + t.model.ModelID + ": " + strings.Join(adapted, ", ")
 	}
 
-	var tr ledger.AnthropicTracker
+	tr := ledger.AnthropicTracker{Capture: capture}
 	relayErr := relay(w, resp, &tr)
 	leg.Latency = time.Since(start)
 	if t.config.Type == provider.AnthropicSubscription {
 		s.saveRateLimits(context.WithoutCancel(r.Context()), resp.Header)
 	}
 	leg.Usage, leg.StopReason, leg.HTTPStatus = tr.Usage, tr.StopReason, resp.StatusCode
+	leg.Output = tr.Message()
 	switch {
 	case relayErr != nil && r.Context().Err() != nil:
 		leg.Status = ledger.StatusCanceled

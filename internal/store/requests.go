@@ -23,7 +23,9 @@ type Request struct {
 	SubscriptionValueUSD float64
 	ReferenceCostUSD     float64
 	LatencyMS            int64
-	Legs                 []Leg
+	// Captured reports whether content was stored for the request.
+	Captured bool
+	Legs     []Leg
 }
 
 type Leg struct {
@@ -43,7 +45,10 @@ type Leg struct {
 	Note             string
 }
 
-const requestColumns = `id, ts, session_id, agent_id, route, strategy, client_model, stream, status, http_status, error, cost_usd, subscription_value_usd, reference_cost_usd, latency_ms`
+const requestColumns = `id, ts, session_id, agent_id, route, strategy, client_model, stream, status, http_status, error, cost_usd, subscription_value_usd, reference_cost_usd, latency_ms,
+  EXISTS (SELECT 1 FROM request_content c WHERE c.request_id = requests.id)`
+
+const legColumns = `l.seq, l.role, l.provider, l.model, l.billing, l.input_tokens, l.output_tokens, l.cache_read_tokens, l.cache_write_tokens, l.cost_usd, l.latency_ms, l.status, l.stop_reason, l.note`
 
 func (s *Store) InsertRequest(ctx context.Context, r Request) (int64, error) {
 	var id int64
@@ -123,27 +128,51 @@ func (s *Store) GetRequest(ctx context.Context, id int64) (Request, error) {
 	if err != nil {
 		return Request{}, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT seq, role, provider, model, billing, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_usd, latency_ms, status, stop_reason, note
-FROM legs WHERE request_id = ? ORDER BY seq`, id)
+	legs, err := s.legsWhere(ctx, `l.request_id = ?`, id)
 	if err != nil {
 		return Request{}, err
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var l Leg
-		if err := rows.Scan(&l.Seq, &l.Role, &l.Provider, &l.Model, &l.Billing, &l.InputTokens, &l.OutputTokens, &l.CacheReadTokens, &l.CacheWriteTokens, &l.CostUSD, &l.LatencyMS, &l.Status, &l.StopReason, &l.Note); err != nil {
-			return Request{}, err
-		}
-		r.Legs = append(r.Legs, l)
+	r.Legs = legs[id]
+	return r, nil
+}
+
+// RequestLegs returns the legs of the given requests in call order, keyed by request ID.
+func (s *Store) RequestLegs(ctx context.Context, ids []int64) (map[int64][]Leg, error) {
+	if len(ids) == 0 {
+		return map[int64][]Leg{}, nil
 	}
-	return r, rows.Err()
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	return s.legsWhere(ctx, `l.request_id IN (`+placeholders(len(ids))+`)`, args...)
+}
+
+func (s *Store) legsWhere(ctx context.Context, where string, args ...any) (map[int64][]Leg, error) {
+	legs := make(map[int64][]Leg)
+	err := s.each(ctx, `SELECT l.request_id, `+legColumns+` FROM legs l JOIN requests r ON r.id = l.request_id WHERE `+where+` ORDER BY l.request_id, l.seq`,
+		args, func(rows *sql.Rows) error {
+			var id int64
+			var l Leg
+			if err := rows.Scan(&id, &l.Seq, &l.Role, &l.Provider, &l.Model, &l.Billing, &l.InputTokens, &l.OutputTokens,
+				&l.CacheReadTokens, &l.CacheWriteTokens, &l.CostUSD, &l.LatencyMS, &l.Status, &l.StopReason, &l.Note); err != nil {
+				return err
+			}
+			legs[id] = append(legs[id], l)
+			return nil
+		})
+	return legs, err
 }
 
 func scanRequest(row scanner) (Request, error) {
 	var r Request
-	err := row.Scan(&r.ID, &r.TS, &r.SessionID, &r.AgentID, &r.Route, &r.Strategy, &r.ClientModel, &r.Stream, &r.Status, &r.HTTPStatus, &r.Error, &r.CostUSD, &r.SubscriptionValueUSD, &r.ReferenceCostUSD, &r.LatencyMS)
+	err := row.Scan(&r.ID, &r.TS, &r.SessionID, &r.AgentID, &r.Route, &r.Strategy, &r.ClientModel, &r.Stream, &r.Status, &r.HTTPStatus, &r.Error, &r.CostUSD, &r.SubscriptionValueUSD, &r.ReferenceCostUSD, &r.LatencyMS, &r.Captured)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Request{}, ErrNotFound
 	}
 	return r, err
+}
+
+func placeholders(n int) string {
+	return strings.TrimSuffix(strings.Repeat("?, ", n), ", ")
 }
