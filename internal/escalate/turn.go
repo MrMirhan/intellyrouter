@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -69,25 +70,49 @@ func Analyze(body []byte) (Turn, error) {
 	return t, nil
 }
 
-// humanText returns the text a person typed; tool loops only add tool results
-// and system reminders, which yield an empty string.
+// Claude Code adds these user texts itself; a loaded skill, local command
+// output, hook feedback or an interruption does not start a new turn.
+var injectedPrefixes = []string{
+	"Base directory for this skill:",
+	"<local-command-caveat>",
+	"<local-command-stdout>",
+	"<local-command-stderr>",
+	"Stop hook feedback:",
+	"[Request interrupted by user",
+}
+
+// humanText returns the text a person typed; tool loops only add tool results,
+// system reminders and injected texts, which yield an empty string.
 func humanText(raw json.RawMessage) string {
+	var texts []string
 	var s string
 	if json.Unmarshal(raw, &s) == nil {
-		return strings.TrimSpace(systemReminder.ReplaceAllString(s, ""))
+		texts = []string{s}
+	} else {
+		var blocks []block
+		if json.Unmarshal(raw, &blocks) != nil {
+			return ""
+		}
+		for _, b := range blocks {
+			if b.Type == "text" {
+				texts = append(texts, b.Text)
+			}
+		}
 	}
-	var blocks []block
-	if json.Unmarshal(raw, &blocks) != nil {
-		return ""
+	localOutput := false
+	for i, text := range texts {
+		texts[i] = strings.TrimSpace(systemReminder.ReplaceAllString(text, ""))
+		localOutput = localOutput || strings.HasPrefix(texts[i], "<local-command-stdout>") || strings.HasPrefix(texts[i], "<local-command-stderr>")
 	}
 	var parts []string
-	for _, b := range blocks {
-		if b.Type != "text" {
+	for _, text := range texts {
+		injected := slices.ContainsFunc(injectedPrefixes, func(p string) bool { return strings.HasPrefix(text, p) })
+		// A built-in command such as /model echoes its name next to its output;
+		// a custom slash command has no local output and is a real prompt.
+		if text == "" || injected || (localOutput && strings.HasPrefix(text, "<command-name>")) {
 			continue
 		}
-		if text := strings.TrimSpace(systemReminder.ReplaceAllString(b.Text, "")); text != "" {
-			parts = append(parts, text)
-		}
+		parts = append(parts, text)
 	}
 	return strings.Join(parts, "\n")
 }

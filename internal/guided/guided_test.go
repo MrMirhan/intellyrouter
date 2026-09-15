@@ -3,6 +3,7 @@ package guided
 import (
 	"bytes"
 	"encoding/json"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -24,7 +25,8 @@ func TestAnalyze(t *testing.T) {
 		t.Fatal(err)
 	}
 	if turn.Prompt != "Fix the failing tests in calc" || turn.Steps != 3 || turn.FailedResults != 2 ||
-		!turn.EditedFiles || !turn.LastResultsPassed || turn.LastResultsFailed || !turn.Unsure || turn.HasTools {
+		!turn.EditedFiles || !turn.LastResultsPassed || turn.LastResultsFailed || !turn.Unsure || turn.HasTools ||
+		turn.RepeatCount != 1 || turn.RepeatDetail != "" {
 		t.Fatalf("turn = %+v", turn)
 	}
 	withTools, err := Analyze([]byte(`{"tools":[{"name":"Bash"}],"messages":[{"role":"user","content":"hi"}]}`))
@@ -34,29 +36,34 @@ func TestAnalyze(t *testing.T) {
 }
 
 func TestPlan(t *testing.T) {
-	s, err := ParseSettings(`{"director":{"model_id":7},"checkpoints":{"steps":4},"escalate_after":2}`)
+	s, err := ParseSettings(`{"director":{"model_id":7,"max_calls_per_turn":8},"checkpoints":{"steps":4},"escalate_after":2}`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	st := State{LastCheckpointStep: -1}
-	step := func(turn Turn, wantReason string, wantTier int) {
+	step := func(turn Turn, wantReason string, wantTier int) Decision {
 		t.Helper()
 		d := s.Plan(turn, &st, 3)
 		if d.Reason != wantReason || d.Tier != wantTier {
 			t.Fatalf("Plan(%+v) = %+v, want reason %q tier %d (state %+v)", turn, d, wantReason, wantTier, st)
 		}
+		return d
 	}
+	const loop = `Bash "go test ./..." ran 3 times with the same result`
 	step(Turn{}, ReasonTurnStart, 0)
 	step(Turn{}, "", 0) // same step: no second checkpoint
 	step(Turn{Steps: 1}, "", 0)
-	step(Turn{Steps: 2, FailedResults: 2}, ReasonFailures, 0)
-	step(Turn{Steps: 3, FailedResults: 3}, "", 0)
+	step(Turn{Steps: 2, FailedResults: 2, RepeatCount: 3}, ReasonFailures, 0)
+	if d := step(Turn{Steps: 3, FailedResults: 3, RepeatCount: 3, RepeatDetail: loop, Unsure: true}, ReasonRepeat, 0); d.Detail != loop {
+		t.Fatalf("repeat detail = %q", d.Detail)
+	}
 	step(Turn{Steps: 4, FailedResults: 4}, ReasonFailures, 1) // second failure checkpoint moves the executor up
-	step(Turn{Steps: 5, FailedResults: 4, Unsure: true}, ReasonUnsure, 1)
+	step(Turn{Steps: 5, FailedResults: 4, RepeatCount: 5, Unsure: true}, ReasonUnsure, 1)
 	step(Turn{Steps: 6, FailedResults: 4, EditedFiles: true, LastResultsPassed: true}, ReasonReview, 1)
-	step(Turn{Steps: 10, FailedResults: 4}, ReasonSteps, 1)
-	if st.DirectorCalls != 6 {
-		t.Fatalf("director calls = %d", st.DirectorCalls)
+	step(Turn{Steps: 7, FailedResults: 4, RepeatCount: 6}, ReasonRepeat, 1)
+	step(Turn{Steps: 11, FailedResults: 4, RepeatCount: 6}, ReasonSteps, 1)
+	if st.DirectorCalls != 8 || st.LastRepeatCount != 6 {
+		t.Fatalf("state = %+v", st)
 	}
 
 	capped := State{LastCheckpointStep: -1, DirectorCalls: s.Director.MaxCallsPerTurn}
@@ -65,6 +72,128 @@ func TestPlan(t *testing.T) {
 	}
 	if _, err := ParseSettings(`{}`); err == nil {
 		t.Fatal("settings without a director model were accepted")
+	}
+
+	defaults, err := ParseSettings(`{"director":{"model_id":7}}`)
+	if err != nil || defaults.Checkpoints.Steps != 0 || defaults.Checkpoints.Repeats != 3 {
+		t.Fatalf("default checkpoints = %+v, %v", defaults.Checkpoints, err)
+	}
+	if _, err := ParseSettings(`{"director":{"model_id":7},"checkpoints":{"repeats":-1}}`); err == nil {
+		t.Fatal("negative repeats accepted")
+	}
+	off, _ := ParseSettings(`{"director":{"model_id":7},"checkpoints":{"repeats":0}}`)
+	if d := off.Plan(Turn{Steps: 3, RepeatCount: 9}, &State{LastCheckpointStep: -1, DirectorCalls: 1}, 3); d.Reason != "" {
+		t.Fatalf("repeat checkpoint fired while off: %+v", d)
+	}
+}
+
+func TestVerifyCommand(t *testing.T) {
+	verifications := []string{
+		"go test ./...", "go vet ./...", "golangci-lint run", "$(go env GOPATH)/bin/golangci-lint run ./...",
+		"pytest -q", "python -m pytest tests", "tox -e py312", "nox -s lint",
+		"npm test", "npm run lint", "pnpm typecheck", "yarn run check", "bun test", "npm run test:unit",
+		"npx vitest run", "jest --ci", "cargo test", "cargo clippy -- -D warnings", "make verify",
+		"mvn test", "./gradlew check", "gradle test", "dotnet test", "vendor/bin/phpunit", "bundle exec rspec",
+		"mix test", "tsc --noEmit", "eslint .", "ruff check .", "mypy src",
+		"./extranet-dev test unit", "bin/check lint", "./scripts/ci verify",
+		"cd services/api && go test -race ./... 2>&1 | tail -20", "CGO_ENABLED=1 timeout 300 go test ./...",
+	}
+	for _, c := range verifications {
+		if !verifyCommand.MatchString(c) {
+			t.Errorf("%q is not recognized as a verification", c)
+		}
+	}
+	for _, c := range []string{"git status", "ls", "cat test.go", "grep test", "grep -rn pytest .", "cat ./scripts/ci test", "go build ./...", "npm install"} {
+		if verifyCommand.MatchString(c) {
+			t.Errorf("%q is recognized as a verification", c)
+		}
+	}
+}
+
+func TestPatterns(t *testing.T) {
+	cases := []struct {
+		pattern *regexp.Regexp
+		text    string
+		want    bool
+	}{
+		{passPattern, "✓ test completed (20.76s)", true},
+		{passPattern, "✔ build ok", true},
+		{passPattern, "Tests: 12 tests passed, 12 total", true},
+		{passPattern, "===== 3 passed, 1 skipped in 0.12s =====", true},
+		{passPattern, "All checks passed!", true},
+		{passPattern, "ok  \tcalc\t0.2s", true},
+		{passPattern, "Running 42 unit tests\nDone in 20.76s", false},
+		{unsurePattern, "I'm unsure which config the loader reads.", true},
+		{unsurePattern, "I'm not sure whether the cache is stale.", true},
+		{unsurePattern, "Not sure how the fixture gets created.", true},
+		{unsurePattern, "I don't know why the handler returns 500.", true},
+		{unsurePattern, "I am going in circles here.", true},
+		{unsurePattern, "The test still fails after the change.", true},
+		{unsurePattern, "The tests pass now; the change is done.", false},
+	}
+	for _, c := range cases {
+		if got := c.pattern.MatchString(c.text); got != c.want {
+			t.Errorf("%s matches %q = %v, want %v", c.pattern, c.text, got, c.want)
+		}
+	}
+}
+
+func TestAnalyzeLastResults(t *testing.T) {
+	loop := func(results string) string {
+		return `{"tools":[{"name":"Bash"}],"messages":[{"role":"user","content":"Fix the unit tests"},` +
+			`{"role":"assistant","content":[{"type":"tool_use","id":"e1","name":"Edit","input":{"file_path":"calc.go"}},` +
+			`{"type":"tool_use","id":"b1","name":"Bash","input":{"command":"./extranet-dev test unit"}},{"type":"tool_use","id":"b2","name":"Bash","input":{"command":"cat calc.go"}}]},` +
+			`{"role":"user","content":[{"type":"tool_result","tool_use_id":"e1","content":"The file calc.go has been updated."},` + results + `]}]}`
+	}
+	cases := []struct {
+		name, results  string
+		passed, failed bool
+	}{
+		{"wrapper without a pass phrase", `{"type":"tool_result","tool_use_id":"b1","content":"Running 42 unit tests\nDone in 20.76s"}`, true, false},
+		{"wrapper summary line", `{"type":"tool_result","tool_use_id":"b1","content":[{"type":"text","text":"✓ test completed (20.76s)"}]}`, true, false},
+		{"wrapper exit error", `{"type":"tool_result","tool_use_id":"b1","is_error":true,"content":"Exit code 1\nRunning 42 unit tests"}`, false, true},
+		{"failure text without is_error", `{"type":"tool_result","tool_use_id":"b1","content":"--- FAIL: TestAdd (0.00s)\nFAIL"}`, false, true},
+		{"plain command", `{"type":"tool_result","tool_use_id":"b2","content":"package calc"}`, false, false},
+		{"one failure spoils a pass", `{"type":"tool_result","tool_use_id":"b1","content":"Done in 20.76s"},{"type":"tool_result","tool_use_id":"b2","is_error":true,"content":"cat: calc.go: No such file or directory"}`, false, true},
+	}
+	for _, c := range cases {
+		turn, err := Analyze([]byte(loop(c.results)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if turn.LastResultsPassed != c.passed || turn.LastResultsFailed != c.failed {
+			t.Errorf("%s: passed %v failed %v, want %v %v", c.name, turn.LastResultsPassed, turn.LastResultsFailed, c.passed, c.failed)
+		}
+	}
+}
+
+func TestAnalyzeRepeats(t *testing.T) {
+	call := func(id, name, input, output string) string {
+		return `,{"role":"assistant","content":[{"type":"tool_use","id":"` + id + `","name":"` + name + `","input":` + input + `}]},` +
+			`{"role":"user","content":[{"type":"tool_result","tool_use_id":"` + id + `","content":"` + output + `"}]}`
+	}
+	failed := func(duration string) string { return `--- FAIL: TestAdd (0.00s)\nFAIL\tcalc\t` + duration }
+	edit := call("e1", "Edit", `{"file_path":"calc.go"}`, "The file calc.go has been updated.")
+	session := func(calls string) string {
+		return `{"tools":[{"name":"Bash"}],"messages":[{"role":"user","content":"Fix calc"}` + calls + `]}`
+	}
+
+	stuck, err := Analyze([]byte(session(call("b1", "Bash", `{"command": "go test ./..."}`, failed("0.215s")) + edit +
+		call("b2", "Bash", `{"command":"go test ./..."}`, failed("0.301s")) + call("b3", "Bash", `{"command":"go test ./..."}`, failed("0.198s")))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stuck.RepeatCount != 3 || stuck.RepeatDetail != `Bash "go test ./..." ran 3 times with the same result` {
+		t.Fatalf("stuck: count %d detail %q", stuck.RepeatCount, stuck.RepeatDetail)
+	}
+
+	fixed, err := Analyze([]byte(session(call("b1", "Bash", `{"command":"go test ./..."}`, failed("0.215s")) + edit +
+		call("b2", "Bash", `{"command":"go test ./..."}`, `ok  \tcalc\t0.2s`))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fixed.RepeatCount != 1 || fixed.RepeatDetail != "" {
+		t.Fatalf("fixed: count %d detail %q", fixed.RepeatCount, fixed.RepeatDetail)
 	}
 }
 

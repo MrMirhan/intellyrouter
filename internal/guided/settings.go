@@ -32,6 +32,9 @@ type Checkpoints struct {
 	TurnStart bool `json:"turn_start"`
 	// FailedResults is the number of new failed tool results that triggers a check.
 	FailedResults int `json:"failed_results"`
+	// Repeats is the number of identical tool calls with the same result that
+	// triggers a check.
+	Repeats int `json:"repeats"`
 	// Steps is the number of executor steps without a check that triggers one.
 	Steps           int  `json:"steps"`
 	Unsure          bool `json:"unsure"`
@@ -41,6 +44,7 @@ type Checkpoints struct {
 const (
 	ReasonTurnStart = "turn start"
 	ReasonFailures  = "failed tool results"
+	ReasonRepeat    = "repeated action"
 	ReasonUnsure    = "executor is unsure"
 	ReasonReview    = "review after passing tests"
 	ReasonSteps     = "step budget"
@@ -52,7 +56,7 @@ var efforts = []string{"", "low", "medium", "high", "xhigh", "max"}
 func DefaultSettings() Settings {
 	return Settings{
 		Director:      DirectorSettings{Effort: "medium", MaxCallsPerTurn: 6},
-		Checkpoints:   Checkpoints{TurnStart: true, FailedResults: 2, Steps: 15, Unsure: true, ReviewOnSuccess: true},
+		Checkpoints:   Checkpoints{TurnStart: true, FailedResults: 2, Repeats: 3, Unsure: true, ReviewOnSuccess: true},
 		Consult:       true,
 		EscalateAfter: 2,
 	}
@@ -73,7 +77,7 @@ func ParseSettings(raw string) (Settings, error) {
 		return Settings{}, fmt.Errorf("director.effort must be one of low, medium, high, xhigh, max, or empty")
 	case s.Director.MaxCallsPerTurn < 1:
 		return Settings{}, errors.New("director.max_calls_per_turn must be at least 1")
-	case s.Checkpoints.FailedResults < 0 || s.Checkpoints.Steps < 0 || s.EscalateAfter < 0:
+	case s.Checkpoints.FailedResults < 0 || s.Checkpoints.Repeats < 0 || s.Checkpoints.Steps < 0 || s.EscalateAfter < 0:
 		return Settings{}, errors.New("checkpoint counts and escalate_after cannot be negative")
 	}
 	return s, nil
@@ -108,6 +112,9 @@ func (s Settings) Plan(t Turn, st *State, tiers int) Decision {
 				st.FailureCheckpoints = 0
 				d.Escalated = true
 			}
+		case c.Repeats > 0 && t.RepeatCount >= c.Repeats && t.RepeatCount >= st.LastRepeatCount+c.Repeats:
+			d.Reason, d.Detail = ReasonRepeat, t.RepeatDetail
+			st.LastRepeatCount = t.RepeatCount
 		case c.Unsure && t.Unsure:
 			d.Reason = ReasonUnsure
 		case c.ReviewOnSuccess && !st.Reviewed && t.EditedFiles && t.LastResultsPassed:

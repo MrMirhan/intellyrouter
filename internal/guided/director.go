@@ -231,6 +231,7 @@ type State struct {
 	DirectorCalls      int
 	LastCheckpointStep int
 	LastFailedResults  int
+	LastRepeatCount    int
 	FailureCheckpoints int
 	Reviewed           bool
 	Tier               int
