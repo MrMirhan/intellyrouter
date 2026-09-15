@@ -9,26 +9,35 @@ import (
 )
 
 type evalRunJSON struct {
-	ID         int64          `json:"id"`
-	CreatedAt  int64          `json:"created_at"`
-	FinishedAt int64          `json:"finished_at"`
-	Status     string         `json:"status"`
-	Mode       string         `json:"mode"`
-	Routes     []string       `json:"routes"`
-	Tasks      []string       `json:"tasks"`
-	Parallel   int            `json:"parallel"`
-	Total      int            `json:"total"`
-	Done       int            `json:"done"`
-	Error      string         `json:"error"`
-	Summaries  []eval.Summary `json:"summaries,omitempty"`
-	Results    []eval.Result  `json:"results,omitempty"`
+	ID         int64    `json:"id"`
+	CreatedAt  int64    `json:"created_at"`
+	FinishedAt int64    `json:"finished_at"`
+	Status     string   `json:"status"`
+	Mode       string   `json:"mode"`
+	Routes     []string `json:"routes"`
+	Tasks      []string `json:"tasks"`
+	Parallel   int      `json:"parallel"`
+	Total      int      `json:"total"`
+	Done       int      `json:"done"`
+	Error      string   `json:"error"`
+}
+
+// evalRunDetailJSON always carries both arrays, empty while no task has finished.
+type evalRunDetailJSON struct {
+	evalRunJSON
+	Summaries []eval.Summary `json:"summaries"`
+	Results   []eval.Result  `json:"results"`
 }
 
 func toEvalRunJSON(r store.EvalRun) evalRunJSON {
-	out := evalRunJSON{
+	return evalRunJSON{
 		ID: r.ID, CreatedAt: r.CreatedAt, FinishedAt: r.FinishedAt, Status: r.Status, Mode: r.Mode,
 		Routes: r.Routes, Tasks: r.Tasks, Parallel: r.Parallel, Total: r.Total, Done: r.Done, Error: r.Error,
 	}
+}
+
+func toEvalRunDetailJSON(r store.EvalRun) evalRunDetailJSON {
+	out := evalRunDetailJSON{evalRunJSON: toEvalRunJSON(r), Summaries: []eval.Summary{}, Results: []eval.Result{}}
 	for _, e := range r.Results {
 		out.Results = append(out.Results, eval.Result{
 			Task: e.Task, Route: e.Route, Passed: e.Passed, DurationMS: e.DurationMS,
@@ -122,7 +131,7 @@ func (a *API) getEvalRun(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toEvalRunJSON(run))
+	writeJSON(w, http.StatusOK, toEvalRunDetailJSON(run))
 }
 
 func (a *API) cancelEvalRun(w http.ResponseWriter, r *http.Request) {

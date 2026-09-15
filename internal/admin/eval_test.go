@@ -67,6 +67,9 @@ func TestEvalEndpoints(t *testing.T) {
 	created := decodeInto[struct {
 		ID int64 `json:"id"`
 	}](t, c.do("POST", "/api/admin/eval/runs", start, http.StatusCreated))
+	if fresh := c.do("GET", fmt.Sprintf("/api/admin/eval/runs/%d", created.ID), nil, http.StatusOK); !bytes.Contains(fresh, []byte(`"summaries":`)) || !bytes.Contains(fresh, []byte(`"results":`)) {
+		t.Fatalf("run detail is missing the result arrays: %s", fresh)
+	}
 
 	type runView struct {
 		Status    string         `json:"status"`
