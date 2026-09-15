@@ -4,7 +4,15 @@ import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 
-export function CopyButton({ value, label = "Copy" }: { value: string; label?: string }) {
+export function CopyButton({
+  value,
+  label = "Copy",
+  iconOnly = false,
+}: {
+  value: string
+  label?: string
+  iconOnly?: boolean
+}) {
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
@@ -20,6 +28,21 @@ export function CopyButton({ value, label = "Copy" }: { value: string; label?: s
     } catch {
       toast.error("Copy failed. Select the text and copy it by hand.")
     }
+  }
+
+  if (iconOnly) {
+    return (
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        onClick={copy}
+        title={label}
+        aria-label={copied ? "Copied" : label}
+      >
+        {copied ? <CheckIcon /> : <CopyIcon />}
+      </Button>
+    )
   }
 
   return (

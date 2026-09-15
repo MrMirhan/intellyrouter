@@ -1,5 +1,12 @@
+import { useState, type ReactNode } from "react"
 import { Link, useParams } from "react-router"
-import { ArrowLeftIcon, SearchXIcon, SignpostIcon, TriangleAlertIcon } from "lucide-react"
+import {
+  ArrowLeftIcon,
+  DownloadIcon,
+  SearchXIcon,
+  SignpostIcon,
+  TriangleAlertIcon,
+} from "lucide-react"
 
 import {
   BillingBadge,
@@ -24,10 +31,14 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
-import { ApiError } from "@/lib/api"
+import { ContentBlocks, Expandable, TruncatedText } from "@/features/requests/content-blocks"
+import { ContentHint, RequestContentView } from "@/features/requests/request-content"
+import { ApiError, api } from "@/lib/api"
 import { formatAbsolute, formatCount, formatLatency, formatTokens, formatUsd } from "@/lib/format"
-import { useRequest } from "@/lib/queries"
-import type { Leg } from "@/lib/types"
+import { useRequest, useRequestContent } from "@/lib/queries"
+import type { ContentLeg, Leg, RequestRecord } from "@/lib/types"
+
+const contentTail = 30
 
 function Tokens({ value }: { value: number }) {
   return (
@@ -56,7 +67,7 @@ function NotFound() {
   )
 }
 
-function LegItem({ leg, last }: { leg: Leg; last: boolean }) {
+function LegItem({ leg, last, content }: { leg: Leg; last: boolean; content?: ContentLeg }) {
   return (
     <li className="grid grid-cols-[2rem_1fr] gap-3">
       <div className="flex flex-col items-center">
@@ -110,6 +121,16 @@ function LegItem({ leg, last }: { leg: Leg; last: boolean }) {
               )}
             </DetailField>
           </dl>
+          {content?.input && (
+            <Expandable title="Added by the gateway">
+              <TruncatedText text={content.input} />
+            </Expandable>
+          )}
+          {content?.output && (
+            <Expandable title="Output">
+              <ContentBlocks content={content.output.content} />
+            </Expandable>
+          )}
         </CardContent>
       </Card>
     </li>
@@ -160,7 +181,12 @@ export function RequestDetailPage() {
     )
   }
 
-  const data = request.data
+  return <RequestDetail key={request.data.id} data={request.data} back={back} />
+}
+
+function RequestDetail({ data, back }: { data: RequestRecord; back: ReactNode }) {
+  const [tail, setTail] = useState(contentTail)
+  const content = useRequestContent(data.id, tail, data.captured)
   const legs = [...(data.legs ?? [])].sort((a, b) => a.seq - b.seq)
   const saving = data.reference_cost_usd > 0 ? data.reference_cost_usd - data.cost_usd : null
 
@@ -175,6 +201,16 @@ export function RequestDetailPage() {
           </span>
         }
         description={formatAbsolute(data.ts)}
+        actions={
+          data.captured && (
+            <Button variant="outline" size="sm" asChild>
+              <a href={api.requestExportUrl(data.id)} download>
+                <DownloadIcon />
+                Export JSON
+              </a>
+            </Button>
+          )
+        }
       />
 
       {data.error && (
@@ -232,7 +268,7 @@ export function RequestDetailPage() {
             <DetailField label="Session">
               {data.session_id ? (
                 <Link
-                  to={`/requests?session=${encodeURIComponent(data.session_id)}`}
+                  to={`/sessions/${encodeURIComponent(data.session_id)}`}
                   className="font-mono text-xs hover:underline"
                 >
                   {data.session_id}
@@ -260,9 +296,40 @@ export function RequestDetailPage() {
         ) : (
           <ol>
             {legs.map((leg, index) => (
-              <LegItem key={leg.seq} leg={leg} last={index === legs.length - 1} />
+              <LegItem
+                key={leg.seq}
+                leg={leg}
+                last={index === legs.length - 1}
+                content={content.data?.legs.find((item) => item.seq === leg.seq)}
+              />
             ))}
           </ol>
+        )}
+      </section>
+
+      <section className="space-y-4" aria-labelledby="content-heading">
+        <div>
+          <h2 id="content-heading" className="font-heading text-lg font-semibold">
+            Content
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            What Claude Code sent and the final response it got.
+          </p>
+        </div>
+        {!data.captured ? (
+          <ContentHint />
+        ) : content.isError ? (
+          <QueryError error={content.error} onRetry={() => content.refetch()} />
+        ) : content.isPending ? (
+          <Skeleton className="h-64 w-full rounded-xl" />
+        ) : content.data === null ? (
+          <ContentHint />
+        ) : (
+          <RequestContentView
+            content={content.data}
+            loadingAll={content.isPlaceholderData}
+            onLoadAll={() => setTail(0)}
+          />
         )}
       </section>
     </>

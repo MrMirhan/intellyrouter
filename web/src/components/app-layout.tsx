@@ -4,6 +4,7 @@ import {
   KeyRoundIcon,
   LayoutDashboardIcon,
   LogOutIcon,
+  MessagesSquareIcon,
   RouteIcon,
   ScrollTextIcon,
   ServerIcon,
@@ -33,6 +34,7 @@ import { useLogout } from "@/lib/queries"
 const navigation = [
   { to: "/", label: "Overview", icon: LayoutDashboardIcon },
   { to: "/requests", label: "Requests", icon: ScrollTextIcon },
+  { to: "/sessions", label: "Sessions", icon: MessagesSquareIcon },
   { to: "/eval", label: "Eval", icon: FlaskConicalIcon },
   { to: "/providers", label: "Providers", icon: ServerIcon },
   { to: "/routes", label: "Routes", icon: RouteIcon },

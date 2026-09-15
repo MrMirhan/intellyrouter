@@ -1,12 +1,9 @@
 import { useCallback, useEffect, useState } from "react"
-import { Link, useNavigate, useSearchParams } from "react-router"
+import { Link, useSearchParams } from "react-router"
 import { ChevronLeftIcon, ChevronRightIcon, ScrollTextIcon, XIcon } from "lucide-react"
 
-import { RequestStatusBadge, StrategyBadge } from "@/components/badges"
 import { PageHeader } from "@/components/page-header"
 import { QueryError } from "@/components/query-error"
-import { RelativeTime } from "@/components/relative-time"
-import { TableSkeleton } from "@/components/table-skeleton"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import {
@@ -26,18 +23,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { formatCount, formatLatency, formatUsd } from "@/lib/format"
+import { RequestsTable } from "@/features/requests/requests-table"
+import { formatCount } from "@/lib/format"
 import { useRequests, useRoutes } from "@/lib/queries"
 import type { RequestStatus } from "@/lib/types"
-import { cn } from "@/lib/utils"
 
 const pageSize = 50
 const allValue = "all"
@@ -54,7 +43,6 @@ function parseStatus(value: string | null): RequestStatus | undefined {
 }
 
 export function RequestsPage() {
-  const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const route = params.get("route") ?? ""
   const status = parseStatus(params.get("status"))
@@ -209,88 +197,11 @@ export function RequestsPage() {
         </Empty>
       ) : (
         <Card className="gap-0 py-0">
-          <Table className={cn(requests.isPlaceholderData && "opacity-60")}>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Time</TableHead>
-                <TableHead>Route</TableHead>
-                <TableHead>Strategy</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Cost</TableHead>
-                <TableHead className="text-right">Subscription value</TableHead>
-                <TableHead className="text-right">Latency</TableHead>
-                <TableHead>Session</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {requests.isPending ? (
-                <TableSkeleton columns={8} rows={10} />
-              ) : (
-                items.map((item) => (
-                  <TableRow
-                    key={item.id}
-                    className="cursor-pointer"
-                    onClick={() => navigate(`/requests/${item.id}`)}
-                  >
-                    <TableCell>
-                      <RelativeTime ms={item.ts} />
-                    </TableCell>
-                    <TableCell>
-                      <Link
-                        to={`/requests/${item.id}`}
-                        className="font-medium hover:underline"
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        {item.route || "(no route)"}
-                      </Link>
-                      {item.client_model && item.client_model !== item.route && (
-                        <div className="text-xs text-muted-foreground">{item.client_model}</div>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <StrategyBadge strategy={item.strategy} />
-                    </TableCell>
-                    <TableCell>
-                      <span className="flex items-center gap-2">
-                        <RequestStatusBadge status={item.status} />
-                        {item.http_status !== 200 && item.http_status > 0 && (
-                          <span className="text-xs text-muted-foreground tabular-nums">
-                            {item.http_status}
-                          </span>
-                        )}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">{formatUsd(item.cost_usd)}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatUsd(item.subscription_value_usd)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatLatency(item.latency_ms)}
-                    </TableCell>
-                    <TableCell>
-                      {item.session_id ? (
-                        <Button
-                          variant="link"
-                          size="sm"
-                          className="h-auto max-w-40 truncate px-0 font-mono text-xs"
-                          title={`Show only session ${item.session_id}`}
-                          aria-label={`Show only session ${item.session_id}`}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            update({ session: item.session_id })
-                          }}
-                        >
-                          {item.session_id}
-                        </Button>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+          <RequestsTable
+            items={items}
+            loading={requests.isPending}
+            stale={requests.isPlaceholderData}
+          />
           <div className="flex items-center justify-between gap-4 border-t px-4 py-3 text-sm">
             <span className="text-muted-foreground tabular-nums">
               {requests.isPending

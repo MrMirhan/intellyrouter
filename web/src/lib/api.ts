@@ -11,11 +11,15 @@ import type {
   Provider,
   ProviderCreate,
   ProviderUpdate,
+  RequestContent,
   RequestFilter,
   RequestPage,
   RequestRecord,
   Route,
   RouteInput,
+  SessionDetail,
+  SessionFilter,
+  SessionPage,
   Settings,
   Stats,
   StatsRange,
@@ -108,6 +112,22 @@ export const api = {
   listRequests: (filter: RequestFilter) =>
     call<RequestPage>("GET", `/requests${queryString(filter)}`),
   getRequest: (id: number) => call<RequestRecord>("GET", `/requests/${id}`),
+  getRequestContent: async (id: number, tail: number) => {
+    try {
+      return await call<RequestContent>("GET", `/requests/${id}/content${queryString({ tail })}`)
+    } catch (error) {
+      // 404 means the gateway kept no content for this request.
+      if (error instanceof ApiError && error.status === 404) return null
+      throw error
+    }
+  },
+  requestExportUrl: (id: number) => `/api/admin/requests/${id}/export`,
+
+  listSessions: (filter: SessionFilter) =>
+    call<SessionPage>("GET", `/sessions${queryString(filter)}`),
+  getSessionDetail: (id: string) =>
+    call<SessionDetail>("GET", `/sessions/${encodeURIComponent(id)}`),
+  sessionExportUrl: (id: string) => `/api/admin/sessions/${encodeURIComponent(id)}/export`,
 
   getStats: (range: StatsRange) => call<Stats>("GET", `/stats${queryString({ range })}`),
   getSubscriptionLimits: () => call<SubscriptionLimits>("GET", "/subscription/limits"),

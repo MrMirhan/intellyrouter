@@ -1,8 +1,10 @@
 import { useMemo, useState, type SubmitEvent } from "react"
+import { TriangleAlertIcon } from "lucide-react"
 import { toast } from "sonner"
 
 import { PageHeader } from "@/components/page-header"
 import { QueryError } from "@/components/query-error"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -23,6 +25,7 @@ import {
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
+import { Switch } from "@/components/ui/switch"
 import { useModels, useRoutes, useSettings, useUpdateSettings } from "@/lib/queries"
 
 const defaultReferenceModel = "claude-fable-5-1"
@@ -171,6 +174,101 @@ function FallbackRouteCard({ current }: { current: string }) {
   )
 }
 
+function ContentCaptureCard({
+  enabled,
+  retentionDays,
+}: {
+  enabled: boolean
+  retentionDays: number
+}) {
+  const update = useUpdateSettings()
+  const [enabledDraft, setEnabledDraft] = useState<boolean | null>(null)
+  const [daysDraft, setDaysDraft] = useState<string | null>(null)
+
+  const capture = enabledDraft ?? enabled
+  const daysText = daysDraft ?? String(retentionDays)
+  const days = Number(daysText)
+  const validDays = daysText.trim() !== "" && Number.isInteger(days) && days >= 1 && days <= 365
+  const changed = capture !== enabled || days !== retentionDays
+
+  const submit = (event: SubmitEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    update.mutate(
+      { capture_content: capture, capture_retention_days: days },
+      {
+        onSuccess: () => {
+          setEnabledDraft(null)
+          setDaysDraft(null)
+          toast.success(capture ? "Content capture is on" : "Content capture is off")
+        },
+      },
+    )
+  }
+
+  return (
+    <Card>
+      <form onSubmit={submit} className="grid gap-6">
+        <CardHeader>
+          <CardTitle>Content capture</CardTitle>
+          <CardDescription>
+            Keep the prompts and responses of each request. You can then read them on the request
+            page and export them.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <Alert>
+            <TriangleAlertIcon />
+            <AlertDescription>
+              Content capture stores prompts, code, tool output and responses in the gateway data
+              directory. Keep it off for sensitive work.
+            </AlertDescription>
+          </Alert>
+          <div className="flex max-w-md items-start justify-between gap-4">
+            <div className="grid gap-1">
+              <Label htmlFor="capture-content">Capture content</Label>
+              <p id="capture-content-hint" className="text-sm text-muted-foreground">
+                Applies to new requests only.
+              </p>
+            </div>
+            <Switch
+              id="capture-content"
+              checked={capture}
+              onCheckedChange={setEnabledDraft}
+              aria-describedby="capture-content-hint"
+            />
+          </div>
+          <div className="grid max-w-md gap-2">
+            <Label htmlFor="capture-retention">Keep content for (days)</Label>
+            <Input
+              id="capture-retention"
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={365}
+              step={1}
+              value={daysText}
+              onChange={(event) => setDaysDraft(event.target.value)}
+              className="w-32"
+              aria-describedby="capture-retention-hint"
+              aria-invalid={!validDays}
+              required
+            />
+            <p id="capture-retention-hint" className="text-sm text-muted-foreground">
+              From 1 to 365 days. The gateway deletes older content.
+            </p>
+          </div>
+        </CardContent>
+        <CardFooter>
+          <Button type="submit" disabled={!changed || !validDays || update.isPending}>
+            {update.isPending && <Spinner />}
+            Save
+          </Button>
+        </CardFooter>
+      </form>
+    </Card>
+  )
+}
+
 export function SettingsPage() {
   const settings = useSettings()
 
@@ -183,11 +281,16 @@ export function SettingsPage() {
         <>
           <Skeleton className="h-64 w-full rounded-xl" />
           <Skeleton className="h-48 w-full rounded-xl" />
+          <Skeleton className="h-64 w-full rounded-xl" />
         </>
       ) : (
         <>
           <ReferenceModelCard current={settings.data.reference_model} />
           <FallbackRouteCard current={settings.data.fallback_route} />
+          <ContentCaptureCard
+            enabled={settings.data.capture_content}
+            retentionDays={settings.data.capture_retention_days}
+          />
         </>
       )}
     </>

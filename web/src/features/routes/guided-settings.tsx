@@ -227,10 +227,18 @@ export function GuidedSettingsFields({
             <CountField
               id="checkpoint-steps"
               label="Steps without a check"
-              hint="Executor steps since the last check. 0 turns this off."
+              hint="Executor steps since the last check. 0 turns this off. Other checkpoints usually cover long work."
               value={settings.checkpoints.steps}
               min={0}
               onChange={(value) => setCheckpoints({ steps: value })}
+            />
+            <CountField
+              id="checkpoint-repeats"
+              label="Repeated actions"
+              hint="The same tool call with the same result this many times. 0 turns this off."
+              value={settings.checkpoints.repeats}
+              min={0}
+              onChange={(value) => setCheckpoints({ repeats: value })}
             />
           </div>
         </div>

@@ -7,6 +7,7 @@ import type {
   ProviderUpdate,
   RequestFilter,
   RouteInput,
+  SessionFilter,
   StatsRange,
 } from "@/lib/types"
 
@@ -26,6 +27,9 @@ export const queryKeys = {
   keys: ["keys"],
   requestList: (filter: RequestFilter) => ["requests", "list", filter],
   request: (id: number) => ["requests", "detail", id],
+  requestContent: (id: number, tail: number) => ["requests", "content", id, tail],
+  sessionList: (filter: SessionFilter) => ["sessions", "list", filter],
+  sessionDetail: (id: string) => ["sessions", "detail", id],
   stats: (range: StatsRange) => ["stats", range],
   subscriptionLimits: ["subscription-limits"],
   settings: ["settings"],
@@ -194,6 +198,33 @@ export function useRequest(id: number) {
     queryKey: queryKeys.request(id),
     queryFn: () => api.getRequest(id),
     enabled: Number.isInteger(id) && id > 0,
+  })
+}
+
+export function useRequestContent(id: number, tail: number, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.requestContent(id, tail),
+    queryFn: () => api.getRequestContent(id, tail),
+    enabled,
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function useSessions(filter: SessionFilter) {
+  return useQuery({
+    queryKey: queryKeys.sessionList(filter),
+    queryFn: () => api.listSessions(filter),
+    placeholderData: keepPreviousData,
+    refetchInterval: 15_000,
+  })
+}
+
+export function useSessionDetail(id: string) {
+  return useQuery({
+    queryKey: queryKeys.sessionDetail(id),
+    queryFn: () => api.getSessionDetail(id),
+    enabled: id !== "",
+    refetchInterval: 30_000,
   })
 }
 

@@ -33,6 +33,16 @@ export const router = createBrowserRouter([
                 }),
               },
               {
+                path: "sessions",
+                lazy: async () => ({ Component: (await import("@/pages/sessions")).SessionsPage }),
+              },
+              {
+                path: "sessions/:id",
+                lazy: async () => ({
+                  Component: (await import("@/pages/session-detail")).SessionDetailPage,
+                }),
+              },
+              {
                 path: "eval",
                 lazy: async () => ({ Component: (await import("@/pages/eval")).EvalPage }),
               },

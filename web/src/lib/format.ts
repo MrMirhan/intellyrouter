@@ -54,6 +54,9 @@ export function formatDuration(ms: number): string {
     return formatLatency(ms)
   }
   const seconds = Math.round(ms / 1000)
+  if (seconds >= 3600) {
+    return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`
+  }
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
 }
 

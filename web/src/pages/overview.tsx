@@ -4,6 +4,8 @@ import { ActivityIcon, GaugeIcon } from "lucide-react"
 import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts"
 
 import { BillingBadge } from "@/components/badges"
+import { ComparisonCard } from "@/components/comparison-card"
+import { Kpi } from "@/components/kpi"
 import { PageHeader } from "@/components/page-header"
 import { QueryError } from "@/components/query-error"
 import { RelativeTime } from "@/components/relative-time"
@@ -104,26 +106,6 @@ function TooltipRow({
         <span className="font-mono font-medium text-foreground tabular-nums">{value}</span>
       </span>
     </>
-  )
-}
-
-function Kpi({
-  title,
-  value,
-  children,
-}: {
-  title: string
-  value: ReactNode
-  children: ReactNode
-}) {
-  return (
-    <Card size="sm">
-      <CardHeader>
-        <CardDescription>{title}</CardDescription>
-        <CardTitle className="text-2xl font-semibold tabular-nums">{value}</CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-2 text-xs text-muted-foreground">{children}</CardContent>
-    </Card>
   )
 }
 
@@ -547,6 +529,7 @@ export function OverviewPage() {
         <QueryError error={stats.error} onRetry={() => stats.refetch()} />
       ) : stats.isPending ? (
         <>
+          <Skeleton className="h-48 w-full rounded-xl" />
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {Array.from({ length: 8 }, (_, index) => (
               <Skeleton key={index} className="h-32 w-full rounded-xl" />
@@ -559,6 +542,12 @@ export function OverviewPage() {
         </>
       ) : (
         <>
+          {stats.data.totals.requests > 0 && (
+            <ComparisonCard
+              comparison={stats.data.totals.comparison}
+              description={`What the work in the ${range.label} would cost on one model at API prices.`}
+            />
+          )}
           <Kpis stats={stats.data} rangeLabel={range.label} />
           {stats.data.totals.requests === 0 ? (
             <Empty className="border">

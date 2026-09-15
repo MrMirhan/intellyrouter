@@ -86,6 +86,7 @@ export interface GuidedSettings {
     turn_start: boolean
     failed_results: number
     steps: number
+    repeats: number
     unsure: boolean
     review_on_success: boolean
   }
@@ -145,6 +146,12 @@ export interface Leg {
   note: string
 }
 
+export interface LegModel {
+  role: LegRole
+  model: string
+  billing: Billing
+}
+
 export interface RequestRecord {
   id: number
   ts: number
@@ -161,7 +168,144 @@ export interface RequestRecord {
   subscription_value_usd: number
   reference_cost_usd: number
   latency_ms: number
+  models: LegModel[]
+  answer_model: string
+  captured: boolean
   legs?: Leg[]
+}
+
+export interface ContentBlock {
+  type: string
+  text?: string
+  thinking?: string
+  signature?: string
+  id?: string
+  name?: string
+  input?: unknown
+  tool_use_id?: string
+  content?: string | ContentBlock[]
+  is_error?: boolean
+  source?: { type?: string; media_type?: string }
+}
+
+export interface AnthropicMessage {
+  id: string
+  type: "message"
+  role: string
+  model: string
+  content: ContentBlock[]
+  stop_reason: string | null
+  usage: Record<string, unknown>
+}
+
+export interface MessageParam {
+  role: string
+  content: string | ContentBlock[]
+}
+
+export interface ToolDefinition {
+  name: string
+  description?: string
+  input_schema?: unknown
+}
+
+export interface CapturedRequest {
+  model?: string
+  system?: string | ContentBlock[]
+  tools?: ToolDefinition[]
+  messages?: MessageParam[]
+  [key: string]: unknown
+}
+
+export interface ContentLeg {
+  seq: number
+  role: LegRole
+  model: string
+  billing: Billing
+  input: string
+  output: AnthropicMessage | null
+}
+
+export interface RequestContent {
+  message_count: number
+  request: CapturedRequest
+  response: AnthropicMessage | null
+  legs: ContentLeg[]
+}
+
+export interface Comparison {
+  actual_usd: number
+  api_usd: number
+  subscription_value_usd: number
+  reference_model: string
+  work_tokens: {
+    input: number
+    output: number
+    cache_read: number
+    cache_write: number
+  }
+  single_model: { model: string; cost_usd: number }[]
+}
+
+export interface SessionSummary {
+  session_id: string
+  first_ts: number
+  last_ts: number
+  requests: number
+  errors: number
+  agents: number
+  routes: string[]
+  models: { model: string; billing: Billing; calls: number }[]
+  cost_usd: number
+  subscription_value_usd: number
+  input_tokens: number
+  output_tokens: number
+  cache_read_tokens: number
+  cache_write_tokens: number
+  director_calls: number
+  captured_requests: number
+}
+
+export interface SessionPage {
+  items: SessionSummary[]
+  total: number
+}
+
+export type SessionFilter = {
+  route?: string
+  limit?: number
+  offset?: number
+}
+
+export interface SessionModelUsage {
+  role: LegRole
+  model: string
+  billing: Billing
+  calls: number
+  input_tokens: number
+  output_tokens: number
+  cache_read_tokens: number
+  cache_write_tokens: number
+  cost_usd: number
+  latency_ms: number
+}
+
+export interface SessionCheckpoint {
+  request_id: number
+  ts: number
+  model: string
+  billing: Billing
+  status: string
+  note: string
+  latency_ms: number
+}
+
+export interface SessionDetail {
+  summary: SessionSummary
+  by_model: SessionModelUsage[]
+  checkpoints: SessionCheckpoint[]
+  comparison: Comparison
+  requests: RequestRecord[]
 }
 
 export interface RequestPage {
@@ -196,6 +340,7 @@ export interface StatsTotals {
   subscription_tokens: number
   classifier_cost_usd: number
   director_cost_usd: number
+  comparison: Comparison
 }
 
 export interface StatsPoint {
@@ -246,6 +391,8 @@ export interface SubscriptionLimits {
 export interface Settings {
   reference_model: string
   fallback_route: string
+  capture_content: boolean
+  capture_retention_days: number
 }
 
 export type EvalLanguage = "go" | "python"
