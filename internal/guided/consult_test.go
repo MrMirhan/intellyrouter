@@ -8,21 +8,21 @@ import (
 
 func TestAddConsultTool(t *testing.T) {
 	body := `{"model":"m","tools":[{"name":"Bash","input_schema":{"type":"object"}}],"messages":[]}`
-	out, added, err := AddConsultTool([]byte(body))
+	out, added, err := AddConsultTool([]byte(body), RoleDirector)
 	if err != nil || !added || !json.Valid(out) {
 		t.Fatalf("AddConsultTool = %s, %v, %v", out, added, err)
 	}
 	if !strings.HasPrefix(string(out), `{"model":"m","tools":[{"name":"Bash","input_schema":{"type":"object"}},{"name":"ask_director"`) {
 		t.Fatalf("existing tools changed: %s", out)
 	}
-	if _, again, _ := AddConsultTool(out); again {
+	if _, again, _ := AddConsultTool(out, RoleDirector); again {
 		t.Fatal("tool added twice")
 	}
-	empty, added, err := AddConsultTool([]byte(`{"tools":[],"messages":[]}`))
+	empty, added, err := AddConsultTool([]byte(`{"tools":[],"messages":[]}`), RoleDirector)
 	if err != nil || !added || !strings.HasPrefix(string(empty), `{"tools":[{"name":"ask_director"`) {
 		t.Fatalf("empty tools: %s, %v", empty, err)
 	}
-	if _, _, err := AddConsultTool([]byte(`{"tools":null,"messages":[]}`)); err == nil {
+	if _, _, err := AddConsultTool([]byte(`{"tools":null,"messages":[]}`), RoleDirector); err == nil {
 		t.Fatal("request without a tools array accepted")
 	}
 }
@@ -40,7 +40,7 @@ func TestAppendConsultAnswer(t *testing.T) {
 		}
 	}
 
-	out, err := AppendConsultAnswer([]byte(body), "Asking.", "Where?", "In calc.go.")
+	out, err := AppendConsultAnswer([]byte(body), RoleDirector, "Asking.", "Where?", "In calc.go.")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestAppendConsultAnswer(t *testing.T) {
 		t.Fatalf("messages = %s", out)
 	}
 
-	out, err = AppendConsultAnswer([]byte(body), "  ", "Where?", "In calc.go.")
+	out, err = AppendConsultAnswer([]byte(body), RoleDirector, "  ", "Where?", "In calc.go.")
 	if err != nil {
 		t.Fatal(err)
 	}

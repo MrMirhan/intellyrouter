@@ -35,6 +35,7 @@ type statsTotalsJSON struct {
 	SubscriptionTokens   int64          `json:"subscription_tokens"`
 	ClassifierCostUSD    float64        `json:"classifier_cost_usd"`
 	DirectorCostUSD      float64        `json:"director_cost_usd"`
+	AdvisorCostUSD       float64        `json:"advisor_cost_usd"`
 	Comparison           comparisonJSON `json:"comparison"`
 }
 
@@ -162,7 +163,7 @@ func toStatsJSON(name string, since, bucket int64, st store.Stats, reference str
 			CostUSD: t.CostUSD, SubscriptionValueUSD: t.SubscriptionValueUSD, ReferenceCostUSD: t.ReferenceCostUSD, SavingsUSD: t.SavingsUSD,
 			InputTokens: t.InputTokens, OutputTokens: t.OutputTokens, CacheReadTokens: t.CacheReadTokens, CacheWriteTokens: t.CacheWriteTokens,
 			APITokens: t.APITokens, SubscriptionTokens: t.SubscriptionTokens, ClassifierCostUSD: t.ClassifierCostUSD,
-			DirectorCostUSD: t.DirectorCostUSD, Comparison: newComparison(reference, st.Work),
+			DirectorCostUSD: t.DirectorCostUSD, AdvisorCostUSD: t.AdvisorCostUSD, Comparison: newComparison(reference, st.Work),
 		},
 		Series:  make([]statsPointJSON, 0, len(st.Series)),
 		ByRoute: make([]routeStatsJSON, 0, len(st.ByRoute)),

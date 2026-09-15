@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"intellyrouter/internal/guided"
 	"intellyrouter/internal/jsonbytes"
 )
 
@@ -19,6 +18,7 @@ import (
 // holds back the end of the message, so the gateway can answer and stitch the
 // executor's continuation into the same client message.
 type consultWriter struct {
+	tool      string // the hidden consult tool
 	mu        sync.Mutex
 	w         http.ResponseWriter
 	rc        *http.ResponseController
@@ -69,8 +69,8 @@ type consultCall struct {
 	clientTools bool
 }
 
-func newConsultWriter(w http.ResponseWriter) *consultWriter {
-	return &consultWriter{w: w, rc: http.NewResponseController(w), seg: newSegment(false)}
+func newConsultWriter(w http.ResponseWriter, tool string) *consultWriter {
+	return &consultWriter{tool: tool, w: w, rc: http.NewResponseController(w), seg: newSegment(false)}
 }
 
 func newSegment(continuation bool) *segment {
@@ -223,7 +223,7 @@ func (c *consultWriter) block(ev sseEvent, typ string, idx int, start, delta jso
 		_ = json.Unmarshal(start, &cb)
 		s.blocks[idx] = &streamBlock{kind: cb.Type}
 		s.order = append(s.order, idx)
-		if cb.Type == "tool_use" && cb.Name == guided.ConsultToolName {
+		if cb.Type == "tool_use" && cb.Name == c.tool {
 			s.asks = append(s.asks, idx)
 			return nil
 		}

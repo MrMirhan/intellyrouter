@@ -9,19 +9,8 @@ import {
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { ModelSelect } from "@/features/routes/model-select"
-import type { DirectorEffort, GuidedSettings, Model, Provider } from "@/lib/types"
-
-const efforts: { value: DirectorEffort; label: string }[] = [
-  { value: "", label: "Model default" },
-  { value: "low", label: "Low" },
-  { value: "medium", label: "Medium" },
-  { value: "high", label: "High" },
-  { value: "xhigh", label: "Extra high" },
-  { value: "max", label: "Max" },
-]
-
-// Radix Select reserves the empty string, so the model default uses a placeholder value.
-const defaultEffort = "default"
+import { defaultEffort, efforts } from "@/features/routes/effort"
+import type { GuidedSettings, Model, Provider } from "@/lib/types"
 
 function count(value: string): number {
   const n = Math.trunc(Number(value))
@@ -52,7 +41,7 @@ function SwitchRow({
   )
 }
 
-function CountField({
+export function CountField({
   id,
   label,
   hint,
@@ -173,7 +162,7 @@ export function GuidedSettingsFields({
             description={
               subscriptionDirector && !viaClaudeCode
                 ? "Needs a director on an API key, or a subscription director with Ask through Claude Code on."
-                : "The executor gets an ask_director tool. The gateway gets the director's answer and continues the same response. Claude Code does not see the question."
+                : "The executor gets an ask_director tool. The gateway gets the director's answer and continues the same response. Claude Code does not see the question. When the route has an advisor model, the executor asks the advisor instead."
             }
             checked={settings.consult}
             onChange={(consult) => onChange({ ...settings, consult })}

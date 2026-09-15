@@ -5,12 +5,28 @@ import (
 	"strings"
 )
 
-// RouteAdvisor is a route's advisor choice for Claude Code's advisor tool.
-// ModelID replaces the advisor model that Claude Code asks for, and Off removes
-// the tool. Without either, requests keep Claude Code's own advisor.
+// DefaultAdvisorCalls is the number of questions an advisor answers in one
+// turn when the route sets no limit.
+const DefaultAdvisorCalls = 6
+
+// RouteAdvisor is a route's advisor. With ModelID, the gateway answers the
+// executor's questions with that model, on any provider, and Claude Code's own
+// advisor tool uses it on steps that Anthropic runs. Off removes Claude Code's
+// advisor tool. Without either, requests keep Claude Code's own advisor.
 type RouteAdvisor struct {
-	ModelID int64 `json:"model_id,omitempty"`
-	Off     bool  `json:"off,omitempty"`
+	ModelID int64  `json:"model_id,omitempty"`
+	Off     bool   `json:"off,omitempty"`
+	Effort  string `json:"effort,omitempty"`
+	// MaxCallsPerTurn limits the questions the advisor answers in one turn.
+	MaxCallsPerTurn int `json:"max_calls_per_turn,omitempty"`
+}
+
+// CallLimit is the number of questions the advisor answers in one turn.
+func (a RouteAdvisor) CallLimit() int {
+	if a.MaxCallsPerTurn > 0 {
+		return a.MaxCallsPerTurn
+	}
+	return DefaultAdvisorCalls
 }
 
 // ParseRouteAdvisor reads the advisor key of route settings.

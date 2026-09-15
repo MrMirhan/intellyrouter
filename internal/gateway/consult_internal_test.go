@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"intellyrouter/internal/guided"
 )
 
 // writeInChunks splits the stream at arbitrary points, as the network does.
@@ -37,7 +39,7 @@ func readFixture(t *testing.T, name string) string {
 
 func TestConsultWriterStitchesContinuation(t *testing.T) {
 	rec := httptest.NewRecorder()
-	cw := newConsultWriter(rec)
+	cw := newConsultWriter(rec, guided.ConsultToolName)
 	startSegment(cw, http.StatusOK)
 	writeInChunks(t, cw, strings.ReplaceAll(readFixture(t, "stream_ask_director.sse"), "\n", "\r\n"))
 
@@ -90,7 +92,7 @@ data: {"type":"message_stop"}`,
 	}, "\n\n") + "\n\n"
 
 	rec := httptest.NewRecorder()
-	cw := newConsultWriter(rec)
+	cw := newConsultWriter(rec, guided.ConsultToolName)
 	startSegment(cw, http.StatusOK)
 	writeInChunks(t, cw, stream)
 	call, ok := cw.endSegment()
@@ -108,7 +110,7 @@ data: {"type":"message_stop"}`,
 
 func TestConsultWriterReportsContinuationError(t *testing.T) {
 	rec := httptest.NewRecorder()
-	cw := newConsultWriter(rec)
+	cw := newConsultWriter(rec, guided.ConsultToolName)
 	startSegment(cw, http.StatusOK)
 	writeInChunks(t, cw, readFixture(t, "stream_ask_director.sse"))
 	if _, ok := cw.endSegment(); !ok {

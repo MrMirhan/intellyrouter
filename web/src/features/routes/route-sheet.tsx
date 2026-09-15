@@ -36,7 +36,7 @@ import { GuidedSettingsFields } from "@/features/routes/guided-settings"
 import { ModelSelect } from "@/features/routes/model-select"
 import { useCreateRoute, useModels, useProviders, useUpdateRoute } from "@/lib/queries"
 import {
-  advisorChoice,
+  advisorForm,
   advisorSettings,
   defaultEscalateSettings,
   defaultGuidedSettings,
@@ -132,7 +132,7 @@ function RouteForm({ route, onDone }: { route: Route | null; onDone: () => void 
   const [guided, setGuided] = useState<GuidedSettings>(() =>
     route ? guidedSettings(route) : defaultGuidedSettings,
   )
-  const [advisor, setAdvisor] = useState(() => advisorChoice(route?.settings.advisor))
+  const [advisor, setAdvisor] = useState(() => advisorForm(route?.settings.advisor))
   const [submitted, setSubmitted] = useState(false)
   const nextKey = useRef(tiers.length)
 

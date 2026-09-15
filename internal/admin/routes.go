@@ -129,8 +129,8 @@ func (a *API) normalizeRoute(ctx context.Context, r *store.Route) error {
 	return nil
 }
 
-// validateAdvisor checks the advisor model: Anthropic runs the advisor tool,
-// so the model must be on an Anthropic provider.
+// validateAdvisor checks the advisor model and its settings. The gateway runs
+// the advisor with a model on any provider.
 func (a *API) validateAdvisor(ctx context.Context, settings string) error {
 	adv, err := store.ParseRouteAdvisor(settings)
 	if err != nil {
@@ -152,12 +152,11 @@ func (a *API) validateAdvisor(ctx context.Context, settings string) error {
 	if !m.Enabled {
 		return fmt.Errorf("advisor model %s is disabled", m.ModelID)
 	}
-	p, err := a.store.GetProvider(ctx, m.ProviderID)
-	if err != nil {
-		return err
+	if !guided.ValidEffort(adv.Effort) {
+		return errors.New("advisor.effort must be one of low, medium, high, xhigh, max, or empty")
 	}
-	if t := provider.Type(p.Type); t != provider.Anthropic && t != provider.AnthropicSubscription {
-		return fmt.Errorf("advisor model %s must be on an Anthropic provider, because Anthropic runs the advisor", m.ModelID)
+	if adv.MaxCallsPerTurn < 0 {
+		return errors.New("advisor.max_calls_per_turn cannot be negative")
 	}
 	return nil
 }

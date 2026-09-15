@@ -46,6 +46,10 @@ type textMessage struct {
 // DirectorRequest builds a non-streaming Anthropic Messages body that shows the
 // director the executor's session as plain text, so it needs no tools or betas.
 func DirectorRequest(body []byte, model string, ds DirectorSettings, reason, detail, previous string) ([]byte, error) {
+	return consultRequest(body, model, directorSystem, ds.Effort, checkpointText(reason, detail, previous))
+}
+
+func consultRequest(body []byte, model, system, effort, last string) ([]byte, error) {
 	var req struct {
 		Messages []rawMessage `json:"messages"`
 	}
@@ -58,15 +62,15 @@ func DirectorRequest(body []byte, model string, ds DirectorSettings, reason, det
 		blocks := msgs[n-1].Content
 		blocks[len(blocks)-1].CacheControl = map[string]any{"type": "ephemeral"}
 	}
-	msgs = appendText(msgs, "user", checkpointText(reason, detail, previous))
+	msgs = appendText(msgs, "user", last)
 	out := map[string]any{
 		"model":      model,
 		"max_tokens": 8192,
-		"system":     directorSystem,
+		"system":     system,
 		"messages":   msgs,
 	}
-	if ds.Effort != "" {
-		out["output_config"] = map[string]string{"effort": ds.Effort}
+	if effort != "" {
+		out["output_config"] = map[string]string{"effort": effort}
 	}
 	return json.Marshal(out)
 }
@@ -158,6 +162,16 @@ func ParseGuidance(message []byte) (guidance string, approved bool, err error) {
 // an Anthropic Messages body. Earlier messages stay byte-identical, so the
 // executor's prompt cache still covers them.
 func InjectGuidance(body []byte, guidance, reason string) ([]byte, error) {
+	text := fmt.Sprintf("<director-guidance checkpoint=%q>\n%s\n</director-guidance>\n"+
+		"A senior director reviewed your session and wrote the guidance above. Follow it unless the code or tool results clearly contradict it. Do not quote it to the user.",
+		reason, guidance)
+	return appendUserText(body, text)
+}
+
+// appendUserText appends a text block to the last user message, or a user
+// message when the last message is not the user's. Earlier messages stay
+// byte-identical, so the executor's prompt cache still covers them.
+func appendUserText(body []byte, text string) ([]byte, error) {
 	spans, err := jsonbytes.TopLevel(body)
 	if err != nil {
 		return nil, err
@@ -170,10 +184,7 @@ func InjectGuidance(body []byte, guidance, reason string) ([]byte, error) {
 	if err := json.Unmarshal(body[sp.Start:sp.End], &msgs); err != nil {
 		return nil, err
 	}
-	text := fmt.Sprintf("<director-guidance checkpoint=%q>\n%s\n</director-guidance>\n"+
-		"A senior director reviewed your session and wrote the guidance above. Follow it unless the code or tool results clearly contradict it. Do not quote it to the user.",
-		reason, guidance)
-	guidanceBlock, err := json.Marshal(textBlock{Type: "text", Text: text})
+	newBlock, err := json.Marshal(textBlock{Type: "text", Text: text})
 	if err != nil {
 		return nil, err
 	}
@@ -191,14 +202,14 @@ func InjectGuidance(body []byte, guidance, reason string) ([]byte, error) {
 		} else if err := json.Unmarshal(last.Content, &content); err != nil {
 			return nil, err
 		}
-		content = append(content, guidanceBlock)
+		content = append(content, newBlock)
 		updated, err := jsonbytes.SetField(msgs[n-1], "content", joinArray(content))
 		if err != nil {
 			return nil, err
 		}
 		msgs[n-1] = updated
 	} else {
-		msgs = append(msgs, json.RawMessage(`{"role":"user","content":[`+string(guidanceBlock)+`]}`))
+		msgs = append(msgs, json.RawMessage(`{"role":"user","content":[`+string(newBlock)+`]}`))
 	}
 	return jsonbytes.SetField(body, "messages", joinArray(msgs))
 }
@@ -227,6 +238,10 @@ type State struct {
 	FailureCheckpoints int
 	Reviewed           bool
 	Tier               int
+	AdvisorCalls       int
+	// Advice is the advisor's latest answer in the turn, to AdviceQuestion.
+	Advice         string
+	AdviceQuestion string
 }
 
 // Tracker keeps turn states in memory for a limited time.

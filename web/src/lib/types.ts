@@ -98,6 +98,8 @@ export interface GuidedSettings {
 export interface RouteAdvisor {
   model_id?: number
   off?: boolean
+  effort?: DirectorEffort
+  max_calls_per_turn?: number
 }
 
 export interface Route {
@@ -346,6 +348,7 @@ export interface StatsTotals {
   subscription_tokens: number
   classifier_cost_usd: number
   director_cost_usd: number
+  advisor_cost_usd: number
   comparison: Comparison
 }
 

@@ -123,21 +123,22 @@ func transcriptHashes(t guided.Transcript) ([32]byte, [][32]byte) {
 	return sha256.Sum256([]byte(t.Setup)), blocks
 }
 
-// consultViaClaudeCode asks the director through the Claude Code CLI and
-// records the call as a subscription leg.
-func (s *Server) consultViaClaudeCode(ctx context.Context, director target, body []byte, session string, ds guided.DirectorSettings, dec guided.Decision, previous string, capture bool) (string, bool, ledger.Leg) {
-	leg := director.newLeg()
+// consultViaClaudeCode asks a director or an advisor on the subscription
+// through the Claude Code CLI and records the call as a subscription leg. key
+// names the conversation: the role and the executor session.
+func (s *Server) consultViaClaudeCode(ctx context.Context, asked target, body []byte, key, effort, system string, dec guided.Decision, previous string, capture bool) (string, bool, ledger.Leg) {
+	leg := asked.newLeg()
 	leg.Note = "via Claude Code"
 	t, err := guided.ReadTranscript(body)
 	if err != nil {
 		leg.Status, leg.Error = ledger.StatusError, err.Error()
 		return "", false, leg
 	}
-	model := director.model.ModelID
-	if director.model.Context > 200_000 {
+	model := asked.model.ModelID
+	if asked.model.Context > 200_000 {
 		model += claudeCodeLongContext
 	}
-	cs := s.claude.session(session + "\x00" + model)
+	cs := s.claude.session(key + "\x00" + model)
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	select {
@@ -150,8 +151,8 @@ func (s *Server) consultViaClaudeCode(ctx context.Context, director target, body
 
 	setup, blocks := transcriptHashes(t)
 	opts := claudecli.Options{
-		Binary: s.claude.binary, Dir: s.claude.dir, Model: model, Effort: ds.Effort,
-		AppendSystemPrompt: guided.DirectorSystemPrompt(),
+		Binary: s.claude.binary, Dir: s.claude.dir, Model: model, Effort: effort,
+		AppendSystemPrompt: system,
 	}
 	start := time.Now()
 	var res claudecli.Result
@@ -182,7 +183,7 @@ func (s *Server) consultViaClaudeCode(ctx context.Context, director target, body
 	leg.Usage = ledger.Usage{Input: u.Input, Output: u.Output, CacheRead: u.CacheRead, CacheWrite: u.CacheWrite, CacheWrite1h: u.CacheWrite1h}
 	if capture {
 		leg.Output, _ = json.Marshal(map[string]any{
-			"type": "message", "role": "assistant", "model": director.model.ModelID, "stop_reason": "end_turn",
+			"type": "message", "role": "assistant", "model": asked.model.ModelID, "stop_reason": "end_turn",
 			"content": []map[string]string{{"type": "text", "text": res.Text}},
 		})
 	}

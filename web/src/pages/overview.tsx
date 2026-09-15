@@ -131,6 +131,7 @@ function TokenSplit({ api, subscription }: { api: number; subscription: number }
 function Kpis({ stats, rangeLabel }: { stats: Stats; rangeLabel: string }) {
   const t = stats.totals
   const tokens = t.input_tokens + t.output_tokens + t.cache_read_tokens + t.cache_write_tokens
+  const overhead = t.director_cost_usd + t.advisor_cost_usd + t.classifier_cost_usd
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -177,11 +178,11 @@ function Kpis({ stats, rangeLabel }: { stats: Stats; rangeLabel: string }) {
           </span>
         </div>
       </Kpi>
-      <Kpi title="Routing overhead" value={formatUsd(t.director_cost_usd + t.classifier_cost_usd)}>
+      <Kpi title="Routing overhead" value={formatUsd(overhead)}>
         <p>
-          Director {formatUsd(t.director_cost_usd)} · Classifier {formatUsd(t.classifier_cost_usd)}
-          {t.cost_usd > 0 &&
-            ` · ${formatPercent((t.director_cost_usd + t.classifier_cost_usd) / t.cost_usd)} of API spend`}
+          Director {formatUsd(t.director_cost_usd)} · Advisor {formatUsd(t.advisor_cost_usd)} · Classifier{" "}
+          {formatUsd(t.classifier_cost_usd)}
+          {t.cost_usd > 0 && ` · ${formatPercent(overhead / t.cost_usd)} of API spend`}
         </p>
       </Kpi>
       <Kpi title="Tokens processed" value={formatTokens(tokens)}>

@@ -70,11 +70,18 @@ func (s *Server) escalate(w http.ResponseWriter, r *http.Request, route store.Ro
 		e.Reference = &ref
 	}
 
-	legs := s.callWithFallback(w, r, route.Tiers, tierIndex, t, sizeKey, func(target) clientRequest { return cr })
 	note := fmt.Sprintf("tier %s: %s", labels[tierIndex], dec.Reason)
 	if fitNote != "" {
 		note += "; " + fitNote
 	}
+	role := ledger.RoleExecutor
+	if tierIndex > 0 {
+		role = ledger.RoleEscalation
+	}
+	if s.runWithAdvisor(w, r, e, cr, t, turn.Key, role, note) {
+		return
+	}
+	legs := s.callWithFallback(w, r, route.Tiers, tierIndex, t, sizeKey, func(target) clientRequest { return cr })
 	legs[0].Note = joinNote(note, legs[0].Note)
 	for i := range legs {
 		legs[i].Role = ledger.RoleExecutor

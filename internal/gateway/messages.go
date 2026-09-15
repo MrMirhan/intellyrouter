@@ -31,6 +31,8 @@ type clientRequest struct {
 	claudeAuth string
 	// capture keeps the output of each leg for the ledger.
 	capture bool
+	// advisor is the route's advisor model, when it has one.
+	advisor *routeAdvisor
 }
 
 var errDisabled = errors.New("model or provider is disabled")
@@ -82,7 +84,13 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	if cr.capture {
 		e.Input = body
 	}
-	cr.body = s.applyRouteAdvisor(r.Context(), route, cr.body)
+	adv, off := s.loadRouteAdvisor(r.Context(), route)
+	if out, err := applyRouteAdvisor(adv, off, cr.body); err == nil {
+		cr.body = out
+	} else {
+		s.log.Warn("apply route advisor", "route", route.Name, "err", err)
+	}
+	cr.advisor = adv
 
 	switch route.Strategy {
 	case store.StrategyDirect:
@@ -103,6 +111,9 @@ func (s *Server) direct(w http.ResponseWriter, r *http.Request, route store.Rout
 	if err != nil {
 		e.Finish(ledger.StatusError, http.StatusServiceUnavailable, "route model unavailable: "+err.Error())
 		writeError(w, http.StatusServiceUnavailable, "api_error", e.Error)
+		return
+	}
+	if s.runWithAdvisor(w, r, e, cr, t, "", ledger.RoleDirect, "") {
 		return
 	}
 	leg := s.call(w, r, t, cr)

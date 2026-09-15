@@ -175,22 +175,26 @@ claude -p --model <director model> --tools "" --append-system-prompt "<director 
 - At most two of these calls run at the same time. Each call uses your plan limits. The ledger records it as a subscription director leg with the note "via Claude Code".
 - The gateway starts Claude Code with the `-claude` flag of `intellyrouter` (default `claude`). If the call fails, the executor continues with the previous guidance.
 
-### Claude Code advisor
+### Advisor
 
-When the executors run on your Claude subscription, the gateway cannot add a tool to their requests. Claude Code has its own advisor tool for the same purpose: when the model is stuck or before a large change, it asks a second model, and Anthropic runs that advisor on your plan. Choose the advisor in the connect snippet, or set these values yourself (the model ID is an example):
+A route can have an advisor: a second model that the executor asks when it is stuck, when an error keeps coming back, when it is not sure which approach is correct, before a large change, and before it reports that the task is done. Choose the advisor model in the route editor. The model can be on any provider. For example, a guided route can use DeepSeek V4.1 Flash as executor, GLM 5.3 as advisor, and Claude Opus 5 as director.
 
-```json
-{
-  "advisorModel": "claude-opus-5",
-  "env": { "CLAUDE_CODE_ENABLE_EXPERIMENTAL_ADVISOR_TOOL": "1" }
-}
-```
+- The gateway adds an `ask_advisor` tool to the executor's request. When the executor calls it, the gateway sends the advisor a text copy of the session and the question, adds the answer, and continues the same response. Claude Code does not see the question. Later requests in the same turn carry the latest answer.
+- The advisor works on direct, escalate, and guided routes, for streaming requests with tools. On a guided route with an advisor, the executor asks the advisor instead of the director. The director still handles the checkpoints.
+- An advisor on an `anthropic-subscription` provider answers through the Claude Code CLI on the gateway machine, like a [director through Claude Code](#director-through-claude-code), and uses your plan limits.
+- "Questions per turn" limits the answers in one turn (default 6). One request continues after at most 3 questions. The ledger records each answer as an Advisor leg, and the overview counts its API cost as routing overhead.
+- A step on your Claude subscription cannot get `ask_advisor`, because the gateway cannot continue a subscription response on its own. On those steps Claude Code's own advisor tool can run. Anthropic runs that tool, so it needs a Claude advisor model, and Claude Code must have the advisor on. Choose it in the connect snippet, or set these values yourself (the model ID is an example):
 
-- Anthropic runs the advisor, so the advisor must be a model on an Anthropic provider. The connect snippet lists the enabled models of all providers as "model - provider" and offers the advisor for routes with at least one model on an Anthropic provider. Steps on other providers run without the advisor tool: the gateway removes it from those requests.
-- Claude Code does not know route names, so it cannot check whether each model of a route accepts the advisor. When a model rejects it with a 400 error, the gateway sends that request again without the advisor tool and remembers this for that model.
-- For providers other than Anthropic, the gateway removes the advisor tool from the request.
-- Anthropic reports the advisor tokens apart from the main call. The ledger records each advisor call as an Advisor leg with its own tokens and cost.
-- Advisor calls use your plan limits. The advisor tool is experimental in Claude Code.
+  ```json
+  {
+    "advisorModel": "claude-opus-5",
+    "env": { "CLAUDE_CODE_ENABLE_EXPERIMENTAL_ADVISOR_TOOL": "1" }
+  }
+  ```
+
+  Claude Code adds its advisor tool to a request for a route name only when `CLAUDE_CODE_ENABLE_EXPERIMENTAL_ADVISOR_TOOL=1` is set.
+- When the route's advisor is a Claude model, the gateway puts that model into Claude Code's advisor tool. On a step on an Anthropic API key where Claude Code sends that tool, Anthropic runs it, and the gateway does not add `ask_advisor`. When the route's advisor is on another provider, the gateway removes Claude Code's advisor tool. Off removes Claude Code's advisor tool and adds no advisor.
+- When a model rejects Claude Code's advisor tool with a 400 error, the gateway sends that request again without the tool and remembers this for that model. Anthropic reports those advisor tokens apart from the main call, and the ledger records them as an Advisor leg.
 
 ## Context windows
 

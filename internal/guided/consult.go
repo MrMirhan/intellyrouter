@@ -10,16 +10,43 @@ import (
 	"intellyrouter/internal/jsonbytes"
 )
 
-// ConsultToolName is the tool that lets an executor ask the director a
-// question. The gateway answers the call, so Claude Code never sees it.
-const ConsultToolName = "ask_director"
+// Roles of the model that answers the executor's hidden questions.
+const (
+	RoleDirector = "director"
+	RoleAdvisor  = "advisor"
+)
 
-const consultTool = `{"name":"ask_director","description":"Ask the director, a senior engineer who can see this whole session, for advice. Use it when you are stuck, when you are not sure which approach is correct, or before a large or risky change. Call it alone, without other tools in the same response. The result is the director's written answer.","input_schema":{"type":"object","properties":{"question":{"type":"string","description":"Your question, with what you tried, what failed, and the options you see."}},"required":["question"]}}`
+// ConsultToolName lets an executor ask the director a question, and
+// AdvisorToolName the route's advisor. The gateway answers the call, so Claude
+// Code never sees it.
+const (
+	ConsultToolName = "ask_director"
+	AdvisorToolName = "ask_advisor"
+)
 
-// AddConsultTool appends the ask_director tool to the request's tools. Earlier
-// bytes stay unchanged for prompt caching. It reports false when the request
-// already has a tool with that name.
-func AddConsultTool(body []byte) ([]byte, bool, error) {
+// ToolName is the consult tool of a role.
+func ToolName(role string) string {
+	if role == RoleAdvisor {
+		return AdvisorToolName
+	}
+	return ConsultToolName
+}
+
+var consultUse = map[string]string{
+	RoleDirector: "Use it when you are stuck, when you are not sure which approach is correct, or before a large or risky change.",
+	RoleAdvisor:  "Use it when you are stuck, when an error keeps coming back, when you are not sure which approach is correct, before a large or risky change, and before you report that the task is done.",
+}
+
+func consultTool(role string) []byte {
+	name, _ := json.Marshal(ToolName(role))
+	description, _ := json.Marshal(fmt.Sprintf("Ask the %s, a senior engineer who can see this whole session, for advice. %s Call it alone, without other tools in the same response. The result is the %s's written answer.", role, consultUse[role], role))
+	return fmt.Appendf(nil, `{"name":%s,"description":%s,"input_schema":{"type":"object","properties":{"question":{"type":"string","description":"Your question, with what you tried, what failed, and the options you see."}},"required":["question"]}}`, name, description)
+}
+
+// AddConsultTool appends the consult tool of a role to the request's tools.
+// Earlier bytes stay unchanged for prompt caching. It reports false when the
+// request already has a tool with that name.
+func AddConsultTool(body []byte, role string) ([]byte, bool, error) {
 	sp, err := arraySpan(body, "tools")
 	if err != nil {
 		return nil, false, err
@@ -31,11 +58,45 @@ func AddConsultTool(body []byte) ([]byte, bool, error) {
 		return nil, false, err
 	}
 	for _, t := range tools {
-		if t.Name == ConsultToolName {
+		if t.Name == ToolName(role) {
 			return body, false, nil
 		}
 	}
-	return appendItems(body, sp, []byte(consultTool)), true, nil
+	return appendItems(body, sp, consultTool(role)), true, nil
+}
+
+// RemoveConsultTool removes the consult tool of a role from the request's
+// tools, so the executor cannot ask again.
+func RemoveConsultTool(body []byte, role string) ([]byte, error) {
+	sp, err := arraySpan(body, "tools")
+	if err != nil {
+		return nil, err
+	}
+	var tools []json.RawMessage
+	if err := json.Unmarshal(body[sp.Start:sp.End], &tools); err != nil {
+		return nil, err
+	}
+	kept := make([][]byte, 0, len(tools))
+	for _, tool := range tools {
+		var head struct {
+			Name string `json:"name"`
+		}
+		if json.Unmarshal(tool, &head) == nil && head.Name == ToolName(role) {
+			continue
+		}
+		kept = append(kept, tool)
+	}
+	return jsonbytes.SetField(body, "tools", append(append([]byte{'['}, bytes.Join(kept, []byte{','})...), ']'))
+}
+
+// HasTools reports whether the request offers the model at least one tool.
+func HasTools(body []byte) bool {
+	sp, err := arraySpan(body, "tools")
+	if err != nil {
+		return false
+	}
+	var tools []json.RawMessage
+	return json.Unmarshal(body[sp.Start:sp.End], &tools) == nil && len(tools) > 0
 }
 
 // AppendAssistantText appends an assistant message with one text block.
@@ -44,16 +105,16 @@ func AppendAssistantText(body []byte, text string) ([]byte, error) {
 }
 
 // AppendConsultAnswer lets the executor continue its response after the
-// director's answer. The hidden ask_director call is not replayed, because
-// some upstreams, such as Gemini, reject a replayed function call that has no
-// thought signature. text is what the executor wrote before it asked.
-func AppendConsultAnswer(body []byte, text, question, answer string) ([]byte, error) {
+// answer of the director or the advisor. The hidden call is not replayed,
+// because some upstreams, such as Gemini, reject a replayed function call that
+// has no thought signature. text is what the executor wrote before it asked.
+func AppendConsultAnswer(body []byte, role, text, question, answer string) ([]byte, error) {
 	if strings.TrimSpace(text) == "" {
-		text = "I will ask the director before I continue."
+		text = fmt.Sprintf("I will ask the %s before I continue.", role)
 	}
-	note := fmt.Sprintf("<director-answer>\nYou asked the director: %s\n\n%s\n</director-answer>\n"+
+	note := fmt.Sprintf("<%[1]s-answer>\nYou asked the %[1]s: %[2]s\n\n%[3]s\n</%[1]s-answer>\n"+
 		"Continue your response from where it stopped. Do not repeat what you already wrote, and do not ask the same question again.",
-		question, answer)
+		role, question, answer)
 	return appendMessages(body,
 		textMessage{Role: "assistant", Content: []textBlock{{Type: "text", Text: text}}},
 		textMessage{Role: "user", Content: []textBlock{{Type: "text", Text: note}}})

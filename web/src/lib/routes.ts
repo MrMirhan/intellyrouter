@@ -1,4 +1,4 @@
-import type { EscalateSettings, GuidedSettings, Route, RouteAdvisor } from "@/lib/types"
+import type { DirectorEffort, EscalateSettings, GuidedSettings, Route, RouteAdvisor } from "@/lib/types"
 
 export const defaultEscalateSettings: EscalateSettings = {
   classifier: { enabled: false, model_id: 0, target: "top" },
@@ -54,14 +54,27 @@ export function guidedSettings(route: Route): GuidedSettings {
   }
 }
 
-// advisorChoice is the select value for a route's advisor: "client", "off", or a model row ID.
-export function advisorChoice(advisor?: RouteAdvisor): string {
-  if (advisor?.off) return "off"
-  return advisor?.model_id ? String(advisor.model_id) : "client"
+export const defaultAdvisorCalls = 6
+
+// AdvisorForm is the route form state for the advisor. choice is "client", "off", or a model row ID.
+export interface AdvisorForm {
+  choice: string
+  effort: DirectorEffort
+  max_calls_per_turn: number
 }
 
-export function advisorSettings(choice: string): { advisor?: RouteAdvisor } {
-  if (choice === "off") return { advisor: { off: true } }
-  if (choice === "client") return {}
-  return { advisor: { model_id: Number(choice) } }
+export function advisorForm(advisor?: RouteAdvisor): AdvisorForm {
+  return {
+    choice: advisor?.off ? "off" : advisor?.model_id ? String(advisor.model_id) : "client",
+    effort: advisor?.effort ?? "",
+    max_calls_per_turn: advisor?.max_calls_per_turn || defaultAdvisorCalls,
+  }
+}
+
+export function advisorSettings(form: AdvisorForm): { advisor?: RouteAdvisor } {
+  if (form.choice === "off") return { advisor: { off: true } }
+  if (form.choice === "client") return {}
+  return {
+    advisor: { model_id: Number(form.choice), effort: form.effort, max_calls_per_turn: form.max_calls_per_turn },
+  }
 }

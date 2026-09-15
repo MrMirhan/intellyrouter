@@ -28,6 +28,7 @@ type guidedCall struct {
 	stream      bool
 	consult     bool // the executor request offers ask_director
 	answered    bool // the executor request carries the director's answer
+	advisor     bool // the request asks the route's advisor
 }
 
 // setupGuided builds a guided route: DeepSeek flash and pro as executor tiers
@@ -52,14 +53,15 @@ func setupGuided(t *testing.T, directorType provider.Type) (env, func() []guided
 		c := guidedCall{
 			model: body.Model, auth: r.Header.Get("Authorization"), stream: body.Stream,
 			director: bytes.Contains(raw, []byte("You direct a coding agent")),
+			advisor:  bytes.Contains(raw, []byte("You advise a coding agent")),
 			guidance: bytes.Contains(raw, []byte("director-guidance")),
-			consult:  bytes.Contains(raw, []byte(`"name":"ask_director"`)),
-			answered: bytes.Contains(raw, []byte("director-answer")),
+			consult:  bytes.Contains(raw, []byte(`"name":"ask_director"`)) || bytes.Contains(raw, []byte(`"name":"ask_advisor"`)),
+			answered: bytes.Contains(raw, []byte("director-answer")) || bytes.Contains(raw, []byte("advisor-answer")),
 		}
 		mu.Lock()
 		calls = append(calls, c)
 		mu.Unlock()
-		if c.director {
+		if c.director || c.advisor {
 			if bytes.Contains(raw, []byte(`"tools"`)) {
 				w.WriteHeader(http.StatusBadRequest)
 				return
@@ -72,6 +74,8 @@ func setupGuided(t *testing.T, directorType provider.Type) (env, func() []guided
 		switch {
 		case c.answered:
 			_, _ = w.Write(afterAnswer)
+		case bytes.Contains(raw, []byte("ASK_TEST")) && bytes.Contains(raw, []byte(`"name":"ask_advisor"`)):
+			_, _ = w.Write(bytes.ReplaceAll(askFixture, []byte("ask_director"), []byte("ask_advisor")))
 		case bytes.Contains(raw, []byte("ASK_TEST")):
 			_, _ = w.Write(askFixture)
 		default:

@@ -56,6 +56,9 @@ const (
 
 var efforts = []string{"", "low", "medium", "high", "xhigh", "max"}
 
+// ValidEffort reports whether effort is an effort level or empty.
+func ValidEffort(effort string) bool { return slices.Contains(efforts, effort) }
+
 func DefaultSettings() Settings {
 	return Settings{
 		Director:      DirectorSettings{Effort: "medium", MaxCallsPerTurn: 6},

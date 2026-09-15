@@ -120,12 +120,28 @@ func (s *Server) guided(w http.ResponseWriter, r *http.Request, route store.Rout
 			note += "; guidance not added: " + err.Error()
 		}
 	}
+	if st.Advice != "" && executor.config.Type != provider.AnthropicSubscription {
+		if injected, err := guided.InjectAdvice(body, st.AdviceQuestion, st.Advice); err == nil {
+			body = injected
+			if added != "" {
+				added += "\n\n"
+			}
+			added += st.Advice
+			note += "; advisor answer from earlier in the turn"
+		}
+	}
 	exec := clientRequest{body: body, stream: cr.stream, claudeAuth: cr.claudeAuth, capture: cr.capture}
-	if settings.Consult && cr.stream && turn.HasTools &&
+	run := consultRun{executor: executor, key: key, state: st, note: note, guidance: added, legRole: ledger.RoleExecutor}
+	if c := s.advisorFor(cr, executor); c != nil {
+		run.consultant = *c
+	} else if cr.advisor == nil && settings.Consult && cr.stream && turn.HasTools &&
 		(director.config.Type != provider.AnthropicSubscription || s.viaClaudeCode(settings.Director, director)) && executor.config.Type != provider.AnthropicSubscription {
-		if withTool, ok, err := guided.AddConsultTool(body); err == nil && ok {
+		run.consultant = consultant{role: guided.RoleDirector, target: director, maxCalls: settings.Director.MaxCallsPerTurn, director: settings.Director}
+	}
+	if run.role != "" {
+		if withTool, ok := withConsultTool(body, run.role); ok {
 			exec.body = withTool
-			s.runWithConsult(w, r, e, exec, consultRun{settings: settings, director: director, executor: executor, key: key, state: st, note: note, guidance: added})
+			s.runWithConsult(w, r, e, exec, run)
 			return
 		}
 	}
@@ -151,33 +167,46 @@ func (s *Server) guided(w http.ResponseWriter, r *http.Request, route store.Rout
 // maxQuestionsPerRequest limits the hidden continuations of one client request.
 const maxQuestionsPerRequest = 3
 
-const (
-	answerLimit       = "The director cannot answer more questions in this turn. Continue with your best judgment."
-	answerUnavailable = "The director is not available now. Continue with your best judgment."
-)
+// consultant answers the executor's hidden questions: a guided route's
+// director or the route's advisor.
+type consultant struct {
+	role     string
+	target   target
+	effort   string
+	maxCalls int
+	// director holds the settings of a director.
+	director guided.DirectorSettings
+}
 
 type consultRun struct {
-	settings guided.Settings
-	director target
+	consultant
 	executor target
 	key      string
 	state    guided.State
 	note     string
-	// guidance is the director text already added to the executor's request.
+	legRole  string
+	// guidance is the director or advisor text already added to the executor's request.
 	guidance string
 }
 
-// runWithConsult calls the executor with the ask_director tool. The gateway
-// answers each question with the director and continues the executor's
-// response, so Claude Code receives one message without the hidden exchange.
+func (run *consultRun) callsLeft() bool {
+	if run.role == guided.RoleAdvisor {
+		return run.state.AdvisorCalls < run.maxCalls
+	}
+	return run.state.DirectorCalls < run.maxCalls
+}
+
+// runWithConsult calls the executor with the consult tool of the run's role.
+// The gateway answers each question and continues the executor's response, so
+// Claude Code receives one message without the hidden exchange.
 func (s *Server) runWithConsult(w http.ResponseWriter, r *http.Request, e *ledger.Entry, cr clientRequest, run consultRun) {
-	cw := newConsultWriter(w)
+	cw := newConsultWriter(w, guided.ToolName(run.role))
 	defer cw.keepAlive(pingInterval)()
 	body, note, added := cr.body, run.note, run.guidance
 	var leg ledger.Leg
 	for questions := 0; ; questions++ {
 		leg = s.call(cw, r, run.executor, clientRequest{body: body, stream: true, claudeAuth: cr.claudeAuth, capture: cr.capture})
-		leg.Role = ledger.RoleExecutor
+		leg.Role = run.legRole
 		leg.Note = joinNote(note, leg.Note)
 		if cr.capture {
 			leg.Input = added
@@ -187,32 +216,36 @@ func (s *Server) runWithConsult(w http.ResponseWriter, r *http.Request, e *ledge
 		if !ok {
 			break
 		}
-		answer := answerLimit
-		if questions < maxQuestionsPerRequest && run.state.DirectorCalls < run.settings.Director.MaxCallsPerTurn {
+		answer := fmt.Sprintf("The %s cannot answer more questions in this turn. Continue with your best judgment.", run.role)
+		answered := questions < maxQuestionsPerRequest && run.callsLeft()
+		if answered {
 			answer = s.answerQuestion(r.Context(), e, body, call, &run, cr.capture)
 		}
 		if call.clientTools {
-			// Claude Code runs the other tools; the answer reaches the executor as guidance next time.
+			// Claude Code runs the other tools; the answer reaches the executor in its next request.
 			cw.release()
 			break
 		}
-		next, err := guided.AppendConsultAnswer(body, call.text, call.question, answer)
+		next, err := guided.AppendConsultAnswer(body, run.role, call.text, call.question, answer)
+		if err == nil && !answered {
+			// Without the tool, the executor has to finish the response.
+			next, err = guided.RemoveConsultTool(next, run.role)
+		}
 		if err != nil {
-			cw.fail("cannot continue after the director's answer: " + err.Error())
+			cw.fail(fmt.Sprintf("cannot continue after the %s's answer: %v", run.role, err))
 			leg.Status, leg.Error = ledger.StatusError, err.Error()
 			break
 		}
 		body, added = next, answer
-		note = run.note + "; continued after the director's answer"
+		note = joinNote(run.note, fmt.Sprintf("continued after the %s's answer", run.role))
 		cw.continueSegment()
 	}
 	e.Finish(leg.Status, leg.HTTPStatus, leg.Error)
 }
 
-// answerQuestion asks the director an executor's question and keeps the answer
-// as guidance for the rest of the turn.
+// answerQuestion asks the run's director or advisor an executor's question and
+// keeps the answer for the rest of the turn.
 func (s *Server) answerQuestion(ctx context.Context, e *ledger.Entry, body []byte, call consultCall, run *consultRun, capture bool) string {
-	run.state.DirectorCalls++
 	defer func() { s.guidedTurns.Put(run.key, run.state) }()
 	transcript := body
 	if call.text != "" {
@@ -220,19 +253,33 @@ func (s *Server) answerQuestion(ctx context.Context, e *ledger.Entry, body []byt
 			transcript = withText
 		}
 	}
-	dec := guided.Decision{Reason: guided.ReasonQuestion, Detail: call.question}
-	guidance, _, leg := s.consultDirector(ctx, run.director, transcript, e.SessionID+"\x00"+e.AgentID, run.settings.Director, dec, run.state.Guidance, capture)
-	leg.Role = ledger.RoleDirector
+	session := e.SessionID + "\x00" + e.AgentID
+	var answer string
+	var leg ledger.Leg
+	if run.role == guided.RoleAdvisor {
+		run.state.AdvisorCalls++
+		answer, leg = s.consultAdvisor(ctx, run.consultant, transcript, session, call.question, capture)
+		leg.Role = ledger.RoleAdvisor
+	} else {
+		run.state.DirectorCalls++
+		dec := guided.Decision{Reason: guided.ReasonQuestion, Detail: call.question}
+		answer, _, leg = s.consultDirector(ctx, run.target, transcript, session, run.director, dec, run.state.Guidance, capture)
+		leg.Role = ledger.RoleDirector
+	}
 	leg.Note = joinNote("question: "+clip(call.question, 300), leg.Note)
 	if capture {
 		leg.Input = call.question
 	}
 	e.Legs = append(e.Legs, leg)
 	if leg.Status != ledger.StatusOK {
-		return answerUnavailable
+		return fmt.Sprintf("The %s is not available now. Continue with your best judgment.", run.role)
 	}
-	run.state.Guidance, run.state.GuidanceReason = guidance, guided.ReasonQuestion
-	return guidance
+	if run.role == guided.RoleAdvisor {
+		run.state.Advice, run.state.AdviceQuestion = answer, call.question
+	} else {
+		run.state.Guidance, run.state.GuidanceReason = answer, guided.ReasonQuestion
+	}
+	return answer
 }
 
 // consultDirector asks the director for guidance. A failed call leaves the
@@ -241,16 +288,22 @@ func (s *Server) consultDirector(ctx context.Context, director target, body []by
 	ctx, cancel := context.WithTimeout(ctx, directorTimeout)
 	defer cancel()
 	if s.viaClaudeCode(ds, director) {
-		return s.consultViaClaudeCode(ctx, director, body, session, ds, dec, previous, capture)
+		return s.consultViaClaudeCode(ctx, director, body, guided.RoleDirector+"\x00"+session, ds.Effort, guided.DirectorSystemPrompt(), dec, previous, capture)
 	}
-	leg := director.newLeg()
 	req, err := guided.DirectorRequest(body, director.model.ModelID, ds, dec.Reason, dec.Detail, previous)
 	if err != nil {
+		leg := director.newLeg()
 		leg.Status, leg.Error = ledger.StatusError, err.Error()
 		return "", false, leg
 	}
+	return s.askModel(ctx, director, req, capture)
+}
+
+// askModel sends a consult request to a model on an API key and reads the answer.
+func (s *Server) askModel(ctx context.Context, t target, req []byte, capture bool) (string, bool, ledger.Leg) {
+	leg := t.newLeg()
 	start := time.Now()
-	message, usage, err := s.complete(ctx, director, req)
+	message, usage, err := s.complete(ctx, t, req)
 	leg.Latency, leg.Usage = time.Since(start), usage
 	if capture {
 		leg.Output = message
@@ -259,13 +312,13 @@ func (s *Server) consultDirector(ctx context.Context, director target, body []by
 		leg.Status, leg.Error = ledger.StatusUpstreamError, err.Error()
 		return "", false, leg
 	}
-	guidance, approved, err := guided.ParseGuidance(message)
+	answer, approved, err := guided.ParseGuidance(message)
 	if err != nil {
 		leg.Status, leg.Error = ledger.StatusError, err.Error()
 		return "", false, leg
 	}
 	leg.Status = ledger.StatusOK
-	return guidance, approved, leg
+	return answer, approved, leg
 }
 
 func joinNote(a, b string) string {

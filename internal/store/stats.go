@@ -22,6 +22,7 @@ type StatsTotals struct {
 	SubscriptionTokens   int64
 	ClassifierCostUSD    float64
 	DirectorCostUSD      float64
+	AdvisorCostUSD       float64
 }
 
 type StatsPoint struct {
@@ -107,10 +108,11 @@ SELECT COALESCE(SUM(l.input_tokens), 0), COALESCE(SUM(l.output_tokens), 0),
   COALESCE(SUM(l.cache_read_tokens), 0), COALESCE(SUM(l.cache_write_tokens), 0),
   `+apiTokens+`, `+subscriptionTokens+`,
   COALESCE(SUM(CASE WHEN l.role = 'classifier' THEN l.cost_usd END), 0),
-  COALESCE(SUM(CASE WHEN l.role = 'director' AND l.billing = 'api' THEN l.cost_usd END), 0)
+  COALESCE(SUM(CASE WHEN l.role = 'director' AND l.billing = 'api' THEN l.cost_usd END), 0),
+  COALESCE(SUM(CASE WHEN l.role = 'advisor' AND l.billing = 'api' THEN l.cost_usd END), 0)
 FROM legs l JOIN requests r ON r.id = l.request_id WHERE r.ts >= ?`, since).Scan(
 		&t.InputTokens, &t.OutputTokens, &t.CacheReadTokens, &t.CacheWriteTokens,
-		&t.APITokens, &t.SubscriptionTokens, &t.ClassifierCostUSD, &t.DirectorCostUSD)
+		&t.APITokens, &t.SubscriptionTokens, &t.ClassifierCostUSD, &t.DirectorCostUSD, &t.AdvisorCostUSD)
 	if err != nil {
 		return Stats{}, err
 	}
