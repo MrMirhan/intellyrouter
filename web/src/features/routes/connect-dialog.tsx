@@ -25,7 +25,8 @@ import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { useCreateKey, useRoutes } from "@/lib/queries"
+import { useCreateKey, useModels, useProviders, useRoutes } from "@/lib/queries"
+import { routeModelIds } from "@/lib/routes"
 import type { Route } from "@/lib/types"
 
 type EnvVar = [name: string, value: string]
@@ -37,8 +38,13 @@ function exportLines(env: EnvVar[]): string {
   return env.map(([name, value]) => `export ${name}=${shellQuote(value)}`).join("\n")
 }
 
-function settingsJSON(env: EnvVar[]): string {
-  return JSON.stringify({ env: Object.fromEntries(env) }, null, 2)
+// The advisor must be Fable 5.1: it is the only advisor that every Claude main model accepts,
+// and Claude Code cannot check the pairing for a route name.
+const advisorModel = "claude-fable-5-1"
+
+function settingsJSON(env: EnvVar[], advisor: boolean): string {
+  const envBlock = Object.fromEntries(env)
+  return JSON.stringify(advisor ? { advisorModel, env: envBlock } : { env: envBlock }, null, 2)
 }
 
 function shellQuote(value: string): string {
@@ -61,11 +67,22 @@ function Snippet({ text, label }: { text: string; label: string }) {
   )
 }
 
-function EnvSnippet({ env, format, label }: { env: EnvVar[]; format: SnippetFormat; label: string }) {
+function EnvSnippet({
+  env,
+  format,
+  label,
+  advisor = false,
+}: {
+  env: EnvVar[]
+  format: SnippetFormat
+  label: string
+  advisor?: boolean
+}) {
+  const start = advisor ? `\n# Start Claude Code with: claude --advisor ${advisorModel}` : ""
   return format === "shell" ? (
-    <Snippet text={exportLines(env)} label={`${label} commands`} />
+    <Snippet text={exportLines(env) + start} label={`${label} commands`} />
   ) : (
-    <Snippet text={settingsJSON(env)} label={`${label} settings.json`} />
+    <Snippet text={settingsJSON(env, advisor)} label={`${label} settings.json`} />
   )
 }
 
@@ -129,6 +146,9 @@ function ConnectBody({ route }: { route: Route }) {
   const [subagentRoute, setSubagentRoute] = useState(route.name)
   const [format, setFormat] = useState<SnippetFormat>("shell")
   const [longContext, setLongContext] = useState(true)
+  const [advisor, setAdvisor] = useState(false)
+  const models = useModels()
+  const providers = useProviders()
 
   const routeNames = [
     ...new Set([route.name, ...(routes.data ?? []).map((item) => item.name)]),
@@ -138,6 +158,17 @@ function ConnectBody({ route }: { route: Route }) {
   // Claude Code strips "[1m]" before it sends the model name, and sizes the session at 1M
   // instead of the 200K it assumes for names it does not know.
   const slot = (name: string) => (longContext ? `${name}[1m]` : name)
+  const claudeProviders = new Set(
+    (providers.data ?? [])
+      .filter((provider) => provider.type === "anthropic" || provider.type === "anthropic-subscription")
+      .map((provider) => provider.id),
+  )
+  const routeModels = routeModelIds(route).map((id) => (models.data ?? []).find((model) => model.id === id))
+  // Other providers reject the advisor server tool.
+  const advisorAvailable =
+    routeModels.length > 0 && routeModels.every((model) => model !== undefined && claudeProviders.has(model.provider_id))
+  const withAdvisor = advisor && advisorAvailable
+  const advisorEnv: EnvVar[] = withAdvisor ? [["CLAUDE_CODE_ENABLE_EXPERIMENTAL_ADVISOR_TOOL", "1"]] : []
   const modelEnv: EnvVar[] = [
     ["ANTHROPIC_MODEL", slot(route.name)],
     ["ANTHROPIC_DEFAULT_OPUS_MODEL", slot(route.name)],
@@ -150,11 +181,13 @@ function ConnectBody({ route }: { route: Route }) {
     ["ANTHROPIC_AUTH_TOKEN", keyText],
     ...modelEnv,
     ["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY", "1"],
+    ...advisorEnv,
   ]
   const subscriptionEnv: EnvVar[] = [
     ["ANTHROPIC_BASE_URL", origin],
     ["ANTHROPIC_CUSTOM_HEADERS", `x-intelly-key: ${keyText}`],
     ...modelEnv,
+    ...advisorEnv,
   ]
 
   const create = (event: SubmitEvent<HTMLFormElement>) => {
@@ -271,6 +304,23 @@ function ConnectBody({ route }: { route: Route }) {
         <Switch id="connect-long-context" checked={longContext} onCheckedChange={setLongContext} />
       </div>
 
+      <div className="flex items-start justify-between gap-4 rounded-lg border p-3">
+        <div className="grid gap-1">
+          <Label htmlFor="connect-advisor">Advisor: ask Claude Fable 5.1</Label>
+          <p className="text-sm text-muted-foreground">
+            {advisorAvailable
+              ? "Claude Code gives the model an advisor tool. When the model is stuck, or before a large change, it asks Claude Fable 5.1, which reads the whole session. Advisor calls use your plan limits."
+              : "Available when every model in the route is a Claude model. Other providers do not support the advisor tool."}
+          </p>
+        </div>
+        <Switch
+          id="connect-advisor"
+          checked={withAdvisor}
+          disabled={!advisorAvailable}
+          onCheckedChange={setAdvisor}
+        />
+      </div>
+
       <div className="grid gap-2">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p id="snippet-format-label" className="text-sm font-medium">
@@ -311,7 +361,7 @@ function ConnectBody({ route }: { route: Route }) {
             Claude Code authenticates to the gateway with the gateway key. Use this mode when the
             route runs on API providers only.
           </p>
-          <EnvSnippet env={gatewayEnv} format={format} label="Gateway key mode" />
+          <EnvSnippet env={gatewayEnv} format={format} label="Gateway key mode" advisor={withAdvisor} />
           <p className="text-sm text-muted-foreground">
             With model discovery on, <code>/model</code> in Claude Code lists every route whose
             name contains <code>claude</code>.
@@ -322,7 +372,7 @@ function ConnectBody({ route }: { route: Route }) {
             Claude Code keeps your own Claude login, and the gateway key travels in a separate
             header. Use this mode when a tier runs on your Claude subscription.
           </p>
-          <EnvSnippet env={subscriptionEnv} format={format} label="Claude subscription mode" />
+          <EnvSnippet env={subscriptionEnv} format={format} label="Claude subscription mode" advisor={withAdvisor} />
           <Alert>
             <InfoIcon />
             <AlertTitle>Do not set ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY</AlertTitle>
