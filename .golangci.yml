@@ -10,3 +10,7 @@ linters:
         - (*database/sql.Rows).Close
         - (*database/sql.Tx).Rollback
         - (*intellyrouter/internal/store.Store).Close
+        - os.RemoveAll
+        # tabwriter reports write errors from Flush.
+        - fmt.Fprintf
+        - fmt.Fprintln
