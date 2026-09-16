@@ -81,7 +81,7 @@ func (s *Server) guided(w http.ResponseWriter, r *http.Request, route store.Rout
 		}
 		e.Legs = append(e.Legs, leg)
 		if leg.Status == ledger.StatusOK {
-			st.Guidance, st.GuidanceReason = guidance, dec.Reason
+			st.Guidance, st.GuidanceReason, st.GuidanceSent = guidance, dec.Reason, false
 			st.Reviewed = st.Reviewed || (dec.Reason == guided.ReasonReview && approved)
 		}
 	}
@@ -113,9 +113,13 @@ func (s *Server) guided(w http.ResponseWriter, r *http.Request, route store.Rout
 	case executor.subscription():
 		note += "; guidance not added to a subscription request"
 	default:
-		if injected, err := guided.InjectGuidance(body, st.Guidance, st.GuidanceReason); err == nil {
+		if injected, err := guided.InjectGuidance(body, st.Guidance, st.GuidanceReason, st.GuidanceSent); err == nil {
 			body, added = injected, st.Guidance
 			note += "; guidance from " + st.GuidanceReason
+			if !st.GuidanceSent {
+				st.GuidanceSent = true
+				s.guidedTurns.Put(key, st)
+			}
 		} else {
 			note += "; guidance not added: " + err.Error()
 		}
@@ -277,7 +281,7 @@ func (s *Server) answerQuestion(ctx context.Context, e *ledger.Entry, body []byt
 	if run.role == guided.RoleAdvisor {
 		run.state.Advice, run.state.AdviceQuestion = answer, call.question
 	} else {
-		run.state.Guidance, run.state.GuidanceReason = answer, guided.ReasonQuestion
+		run.state.Guidance, run.state.GuidanceReason, run.state.GuidanceSent = answer, guided.ReasonQuestion, false
 	}
 	return answer
 }

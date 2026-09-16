@@ -160,11 +160,20 @@ func ParseGuidance(message []byte) (guidance string, approved bool, err error) {
 
 // InjectGuidance appends the director's guidance to the last user message of
 // an Anthropic Messages body. Earlier messages stay byte-identical, so the
-// executor's prompt cache still covers them.
-func InjectGuidance(body []byte, guidance, reason string) ([]byte, error) {
-	text := fmt.Sprintf("<director-guidance checkpoint=%q>\n%s\n</director-guidance>\n"+
-		"A senior director reviewed your session and wrote the guidance above. Follow it unless the code or tool results clearly contradict it. Do not quote it to the user.",
-		reason, guidance)
+// executor's prompt cache still covers them. The guidance is not in the
+// client's own history, so the gateway repeats it for the rest of the turn;
+// again marks those later copies, which keeps the executor from starting the
+// same steps over.
+func InjectGuidance(body []byte, guidance, reason string, again bool) ([]byte, error) {
+	note := "A senior director reviewed your session and wrote the guidance above."
+	if again {
+		note = "The director wrote the guidance above earlier in this turn, and you have read it before. " +
+			"Steps you already finished are done: continue from where you stopped instead of starting them again."
+	}
+	text := fmt.Sprintf("<director-guidance checkpoint=%q>\n%s\n</director-guidance>\n%s "+
+		"Follow it unless the code or tool results clearly contradict it. "+
+		"Do not quote it, mention it, or announce that you follow it. Write to the user as if the plan is your own, and start your reply with the work, not with a preface.",
+		reason, guidance, note)
 	return appendUserText(body, text)
 }
 
@@ -229,8 +238,11 @@ func joinArray(items []json.RawMessage) []byte {
 
 // State is what the gateway remembers about one turn.
 type State struct {
-	Guidance           string
-	GuidanceReason     string
+	Guidance       string
+	GuidanceReason string
+	// GuidanceSent is set once the executor has read the current guidance, so
+	// the next request marks it as a reminder of work already under way.
+	GuidanceSent       bool
 	DirectorCalls      int
 	LastCheckpointStep int
 	LastFailedResults  int

@@ -248,7 +248,7 @@ func TestInjectGuidance(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := compact.String()
-	out, err := InjectGuidance([]byte(body), "1. Run go test -race.", ReasonUnsure)
+	out, err := InjectGuidance([]byte(body), "1. Run go test -race.", ReasonUnsure, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,9 +271,19 @@ func TestInjectGuidance(t *testing.T) {
 		t.Fatalf("last message = %+v", last)
 	}
 
-	plain, err := InjectGuidance([]byte(`{"messages":[{"role":"user","content":"hi"}]}`), "Plan.", ReasonTurnStart)
+	plain, err := InjectGuidance([]byte(`{"messages":[{"role":"user","content":"hi"}]}`), "Plan.", ReasonTurnStart, false)
 	if err != nil || !json.Valid(plain) || !strings.Contains(string(plain), `[{"type":"text","text":"hi"},{"type":"text","text":"\u003cdirector-guidance`) {
 		t.Fatalf("string content: %s, %v", plain, err)
+	}
+
+	// A later copy of the same guidance says the executor has read it, so it
+	// continues instead of starting the finished steps again.
+	again, err := InjectGuidance([]byte(body), "1. Run go test -race.", ReasonUnsure, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(again), "you have read it before") || strings.Contains(string(again), "A senior director reviewed") {
+		t.Fatalf("repeat note missing: %s", again)
 	}
 }
 
