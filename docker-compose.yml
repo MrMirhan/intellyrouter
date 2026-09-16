@@ -1,0 +1,44 @@
+# Coolify / Dokploy-compatible compose file. Mount a persistent volume at
+# /data so `master.key` and `intellyrouter.db` survive container restarts;
+# without it, every restart re-encrypts provider keys under a new master key
+# and the dashboard has to re-paste them.
+#
+# The gateway is bound to 7117 on the container's internal interface. Use a
+# reverse proxy (Caddy, Traefik) for TLS in front of it. The gateway logs a
+# warning when bound to a non-loopback address without TLS.
+
+services:
+  intellyrouter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/mrmirhan/intellyrouter:dev
+    restart: unless-stopped
+    environment:
+      INTELLYROUTER_ADDR: 0.0.0.0:7117
+      INTELLYROUTER_DATA: /data
+      INTELLYROUTER_EVAL_TASKS: /eval-tasks
+    volumes:
+      - gateway-data:/data
+      # Mount the eval tasks directory from the host so you can edit them
+      # without rebuilding the image. Replace with a baked-in copy in
+      # production: drop the bind mount and add
+      # COPY eval/tasks /eval-tasks back into the Dockerfile.
+      - ./eval/tasks:/eval-tasks:ro
+    ports:
+      - "127.0.0.1:7117:7117"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:7117/api/hello"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+
+volumes:
+  gateway-data:
+    name: intellyrouter-data

@@ -1,0 +1,50 @@
+# Dokploy deploy file. Dokploy reads docker-compose.yml by default; this
+# file exists so a per-app Dokploy stack can be configured with a
+# different name and image tag without touching the Coolify/generic
+# compose file.
+#
+# All env values come from Dokploy's environment variable panel, set on
+# the app's Configuration screen. The example values match docker-compose.yml.
+#
+# IMPORTANT — what does NOT work in this container:
+#
+#  - Subscription tiers (Claude Code, OpenCode, Cursor, Codex, …) require
+#    `claude login` on the host. Subscription requests from a remote
+#    agent still pass through, but the gateway cannot *originate* calls
+#    to subscription upstreams — directors, advisors, classifiers, and
+#    the eval runner all refuse subscription traffic from a container.
+#  - Directors configured to answer through Claude Code (`viaClaudeCode`)
+#    need `claude` on PATH inside the container. Without it, fall back
+#    to an API-key director model.
+#  - The eval runner (`intelly-eval`) shells out to `claude -p` and
+#    expects a logged-in session. In a container, run the eval runner
+#    on the host instead.
+#
+# See .env.example for the full note on container limits.
+
+services:
+  intellyrouter:
+    image: ghcr.io/mrmirhan/intellyrouter:dev
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      INTELLYROUTER_ADDR: 0.0.0.0:7117
+      INTELLYROUTER_DATA: /data
+      INTELLYROUTER_EVAL_TASKS: /eval-tasks
+    volumes:
+      - gateway-data:/data
+      - ./eval/tasks:/eval-tasks:ro
+    ports:
+      - "127.0.0.1:7117:7117"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:7117/api/hello"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  gateway-data:
+    name: intellyrouter-data
