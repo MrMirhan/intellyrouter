@@ -20,19 +20,12 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 3
 
-  - package-ecosystem: "npm"
-    directory: "/web"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
-    groups:
-      minor-and-patch:
-        update-types:
-          - "minor"
-          - "patch"
-        patterns:
-          - "*"
-
+  # The dashboard is installed with bun, and Dependabot cannot update a
+  # bun.lock. Its npm pull requests leave the lockfile behind, so CI fails
+  # on `bun install --frozen-lockfile` every time. Update web/ by hand:
+  #
+  #   cd web && bun update && bun install --frozen-lockfile
+  #
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
