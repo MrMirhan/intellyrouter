@@ -30,25 +30,28 @@ FROM alpine:3.20
 # a musl-compatible binary, so we do not need npm or Node on this stage.
 ARG CLAUDE_VERSION=stable
 ENV USE_BUILTIN_RIPGREP=0
+# The installer puts a launcher at $HOME/.local/bin/claude that symlinks into
+# $HOME/.local/share. Install with HOME already pointing at the runtime user's
+# home, because copying the tree afterwards leaves that symlink aimed at
+# /root, which mode 0700 keeps the runtime user out of.
 RUN apk add --no-cache ca-certificates tzdata bash curl libgcc libstdc++ ripgrep \
  && addgroup -S intellyrouter && adduser -S -G intellyrouter -h /home/intellyrouter intellyrouter \
- && curl -fsSL https://claude.ai/install.sh | bash -s ${CLAUDE_VERSION} \
- && cp -r /root/.local /home/intellyrouter/.local \
- && chown -R intellyrouter:intellyrouter /home/intellyrouter/.local
+ && curl -fsSL https://claude.ai/install.sh -o /tmp/install.sh \
+ && HOME=/home/intellyrouter bash /tmp/install.sh ${CLAUDE_VERSION} \
+ && rm /tmp/install.sh \
+ && chown -R intellyrouter:intellyrouter /home/intellyrouter
 COPY --from=go /out/intellyrouter /usr/local/bin/intellyrouter
 COPY --from=go /out/intelly-eval    /usr/local/bin/intelly-eval
 ENV INTELLYROUTER_ADDR=0.0.0.0:7117 \
     INTELLYROUTER_DATA=/data \
     INTELLYROUTER_EVAL_TASKS=/eval-tasks \
     CLAUDE_CONFIG_DIR=/data/.claude \
-    PATH=/home/intellyrouter/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin
+    PATH=/home/intellyrouter/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 VOLUME ["/data", "/eval-tasks"]
 EXPOSE 7117
-USER intellyrouter
 WORKDIR /home/intellyrouter
-# The persistent volume at /data may be owned by root (Dokploy/Coolify
-# default). Run the entrypoint as root so we can chown the volume, then
-# drop privileges to intellyrouter with `su` — available on every busybox
-# image, no extra binary needed. master.key mode 0o600 means the owner
-# must be intellyrouter for the gateway to read it.
-ENTRYPOINT ["sh", "-c", "mkdir -p /data/.claude && chown -R intellyrouter:intellyrouter /data && exec su -s /bin/sh intellyrouter -c 'exec intellyrouter -addr \"$INTELLYROUTER_ADDR\" -data \"$INTELLYROUTER_DATA\" -eval-tasks \"$INTELLYROUTER_EVAL_TASKS\"'"]
+# The entrypoint stays root only long enough to take the data volume, which
+# Dokploy and Coolify create owned by root, and then runs the gateway as
+# intellyrouter. master.key is mode 0600, so the gateway cannot read its own
+# key unless it owns the directory.
+ENTRYPOINT ["sh", "-c", "mkdir -p \"$INTELLYROUTER_DATA\" \"$CLAUDE_CONFIG_DIR\" && chown -R intellyrouter:intellyrouter \"$INTELLYROUTER_DATA\" && exec su -s /bin/sh intellyrouter -c 'exec intellyrouter -addr \"$INTELLYROUTER_ADDR\" -data \"$INTELLYROUTER_DATA\" -eval-tasks \"$INTELLYROUTER_EVAL_TASKS\"'"]
