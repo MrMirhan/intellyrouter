@@ -61,6 +61,8 @@ export interface Model {
   price_cache_write: number
   context: number
   enabled: boolean
+  // Vision is true when the model accepts image content blocks.
+  vision: boolean
 }
 
 export interface ModelCreate {
@@ -72,6 +74,7 @@ export interface ModelCreate {
   price_cache_write?: number
   context?: number
   enabled?: boolean
+  vision?: boolean
 }
 
 export type ModelUpdate = Partial<Omit<ModelCreate, "model_id">>

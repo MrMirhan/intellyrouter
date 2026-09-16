@@ -77,6 +77,26 @@ var (
 	durationPattern = regexp.MustCompile(`\b\d+(?:\.\d+)?\s?(?:ns|µs|ms|s)\b`)
 )
 
+// HasImage reports whether any message of an Anthropic Messages request
+// contains an image or document content block. Tool result text that
+// mentions the literal word "image" does not count.
+func HasImage(body []byte) bool {
+	var req struct {
+		Messages []rawMessage `json:"messages"`
+	}
+	if json.Unmarshal(body, &req) != nil {
+		return false
+	}
+	for _, m := range req.Messages {
+		for _, b := range parseBlocks(m.Content) {
+			if b.Type == "image" || b.Type == "document" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // Analyze reads the messages of an Anthropic Messages request body.
 func Analyze(body []byte) (Turn, error) {
 	base, err := escalate.Analyze(body)

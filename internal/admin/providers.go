@@ -224,13 +224,14 @@ type modelJSON struct {
 	PriceCacheWrite float64 `json:"price_cache_write"`
 	Context         int64   `json:"context"`
 	Enabled         bool    `json:"enabled"`
+	Vision          bool    `json:"vision"`
 }
 
 func toModelJSON(m store.Model) modelJSON {
 	return modelJSON{
 		ID: m.ID, ProviderID: m.ProviderID, ModelID: m.ModelID, DisplayName: m.DisplayName,
 		PriceIn: m.PriceIn, PriceOut: m.PriceOut, PriceCacheRead: m.PriceCacheRead, PriceCacheWrite: m.PriceCacheWrite,
-		Context: m.Context, Enabled: m.Enabled,
+		Context: m.Context, Enabled: m.Enabled, Vision: m.Vision,
 	}
 }
 
@@ -243,6 +244,7 @@ type modelInput struct {
 	PriceCacheWrite *float64 `json:"price_cache_write"`
 	Context         *int64   `json:"context"`
 	Enabled         *bool    `json:"enabled"`
+	Vision          *bool    `json:"vision"`
 }
 
 func (in modelInput) apply(m *store.Model) {
@@ -256,6 +258,9 @@ func (in modelInput) apply(m *store.Model) {
 		if f.src != nil {
 			*f.dst = *f.src
 		}
+	}
+	if in.Vision != nil {
+		m.Vision = *in.Vision
 	}
 	if in.Context != nil {
 		m.Context = *in.Context

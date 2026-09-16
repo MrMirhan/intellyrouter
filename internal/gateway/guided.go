@@ -88,7 +88,7 @@ func (s *Server) guided(w http.ResponseWriter, r *http.Request, route store.Rout
 	s.guidedTurns.Put(key, st)
 
 	sizeKey := e.SessionID + "\x00" + e.AgentID
-	tierIndex, fitNote, err := s.fittingTier(r.Context(), route.Tiers, dec.Tier, s.sizes.estimate(sizeKey, len(cr.body)))
+	tierIndex, fitNote, err := s.fittingTier(r.Context(), route.Tiers, dec.Tier, s.sizes.estimate(sizeKey, len(cr.body)), guided.HasImage(cr.body))
 	if err != nil {
 		fail(http.StatusServiceUnavailable, "api_error", "route models unavailable: "+err.Error())
 		return

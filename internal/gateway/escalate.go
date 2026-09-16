@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"intellyrouter/internal/escalate"
+	"intellyrouter/internal/guided"
 	"intellyrouter/internal/ledger"
 	"intellyrouter/internal/provider"
 	"intellyrouter/internal/store"
@@ -54,7 +55,7 @@ func (s *Server) escalate(w http.ResponseWriter, r *http.Request, route store.Ro
 	dec := s.decider.Decide(r.Context(), key, turn, labels, rules, classify)
 
 	sizeKey := e.SessionID + "\x00" + e.AgentID
-	tierIndex, fitNote, err := s.fittingTier(r.Context(), route.Tiers, dec.Tier, s.sizes.estimate(sizeKey, len(cr.body)))
+	tierIndex, fitNote, err := s.fittingTier(r.Context(), route.Tiers, dec.Tier, s.sizes.estimate(sizeKey, len(cr.body)), guided.HasImage(cr.body))
 	if err != nil {
 		fail(http.StatusServiceUnavailable, "api_error", "route models unavailable: "+err.Error())
 		return

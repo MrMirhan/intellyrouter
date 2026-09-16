@@ -17,9 +17,11 @@ type Model struct {
 	PriceCacheWrite float64
 	Context         int64
 	Enabled         bool
+	// Vision is true when the model accepts image content blocks.
+	Vision bool
 }
 
-const modelColumns = `id, provider_id, model_id, display_name, price_in, price_out, price_cache_read, price_cache_write, context, enabled`
+const modelColumns = `id, provider_id, model_id, display_name, price_in, price_out, price_cache_read, price_cache_write, context, enabled, vision`
 
 // SyncModels inserts the models a provider reports and refreshes their names
 // and context sizes. Enabled flags are kept; prices are filled only when unset.
@@ -47,8 +49,8 @@ ON CONFLICT (provider_id, model_id) DO UPDATE SET
 
 func (s *Store) CreateModel(ctx context.Context, m Model) (Model, error) {
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO models (provider_id, model_id, display_name, price_in, price_out, price_cache_read, price_cache_write, context, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		m.ProviderID, m.ModelID, m.DisplayName, m.PriceIn, m.PriceOut, m.PriceCacheRead, m.PriceCacheWrite, m.Context, m.Enabled)
+		`INSERT INTO models (provider_id, model_id, display_name, price_in, price_out, price_cache_read, price_cache_write, context, enabled, vision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		m.ProviderID, m.ModelID, m.DisplayName, m.PriceIn, m.PriceOut, m.PriceCacheRead, m.PriceCacheWrite, m.Context, m.Enabled, m.Vision)
 	if err != nil {
 		return Model{}, mapErr(err)
 	}
@@ -58,8 +60,8 @@ func (s *Store) CreateModel(ctx context.Context, m Model) (Model, error) {
 
 func (s *Store) UpdateModel(ctx context.Context, m Model) error {
 	return affected(s.db.ExecContext(ctx,
-		`UPDATE models SET display_name = ?, price_in = ?, price_out = ?, price_cache_read = ?, price_cache_write = ?, context = ?, enabled = ? WHERE id = ?`,
-		m.DisplayName, m.PriceIn, m.PriceOut, m.PriceCacheRead, m.PriceCacheWrite, m.Context, m.Enabled, m.ID))
+		`UPDATE models SET display_name = ?, price_in = ?, price_out = ?, price_cache_read = ?, price_cache_write = ?, context = ?, enabled = ?, vision = ? WHERE id = ?`,
+		m.DisplayName, m.PriceIn, m.PriceOut, m.PriceCacheRead, m.PriceCacheWrite, m.Context, m.Enabled, m.Vision, m.ID))
 }
 
 func (s *Store) GetModel(ctx context.Context, id int64) (Model, error) {
@@ -102,7 +104,7 @@ func (s *Store) ListModels(ctx context.Context, providerID int64) ([]Model, erro
 
 func scanModel(row scanner) (Model, error) {
 	var m Model
-	err := row.Scan(&m.ID, &m.ProviderID, &m.ModelID, &m.DisplayName, &m.PriceIn, &m.PriceOut, &m.PriceCacheRead, &m.PriceCacheWrite, &m.Context, &m.Enabled)
+	err := row.Scan(&m.ID, &m.ProviderID, &m.ModelID, &m.DisplayName, &m.PriceIn, &m.PriceOut, &m.PriceCacheRead, &m.PriceCacheWrite, &m.Context, &m.Enabled, &m.Vision)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Model{}, ErrNotFound
 	}

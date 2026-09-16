@@ -71,6 +71,7 @@ function ModelForm({
     price_cache_write: model ? String(model.price_cache_write) : "",
   })
   const [enabled, setEnabled] = useState(true)
+  const [vision, setVision] = useState(model?.vision ?? false)
   const pending = createModel.isPending || updateModel.isPending
 
   const submit = (event: SubmitEvent<HTMLFormElement>) => {
@@ -82,6 +83,7 @@ function ModelForm({
       price_out: toNumber(prices.price_out),
       price_cache_read: toNumber(prices.price_cache_read),
       price_cache_write: toNumber(prices.price_cache_write),
+      vision,
     }
     if (model) {
       updateModel.mutate(
@@ -185,6 +187,16 @@ function ModelForm({
           <Label htmlFor="model-enabled">Enabled</Label>
         </div>
       )}
+
+      <div className="flex items-center gap-3">
+        <Switch id="model-vision" checked={vision} onCheckedChange={setVision} />
+        <Label htmlFor="model-vision">
+          Supports images
+          <span className="ml-1 font-normal text-muted-foreground">
+            (routes that receive an image skip tiers without vision)
+          </span>
+        </Label>
+      </div>
 
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onDone}>

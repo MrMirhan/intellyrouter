@@ -10,6 +10,7 @@ import {
 } from "lucide-react"
 
 import { QueryError } from "@/components/query-error"
+import { Badge } from "@/components/ui/badge"
 import { TableSkeleton } from "@/components/table-skeleton"
 import { Button } from "@/components/ui/button"
 import {
@@ -162,6 +163,7 @@ export function ProviderModels({
                 <TableRow>
                   <TableHead className="w-16">Enabled</TableHead>
                   <TableHead>Model</TableHead>
+                  <TableHead className="w-20">Images</TableHead>
                   <TableHead className="text-right">Context</TableHead>
                   <TableHead className="text-right">Input</TableHead>
                   <TableHead className="text-right">Output</TableHead>
@@ -174,10 +176,10 @@ export function ProviderModels({
               </TableHeader>
               <TableBody>
                 {models.isPending ? (
-                  <TableSkeleton columns={8} />
+                  <TableSkeleton columns={9} />
                 ) : visible.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="py-6 text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="py-6 text-center text-muted-foreground">
                       No models match this filter.
                     </TableCell>
                   </TableRow>
@@ -202,6 +204,13 @@ export function ProviderModels({
                           <div className="truncate text-xs text-muted-foreground">
                             {model.display_name}
                           </div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {model.vision ? (
+                          <Badge variant="secondary">Images</Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">

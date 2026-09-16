@@ -72,10 +72,11 @@ func fits(m store.Model, tokens int64) bool {
 	return m.Context <= 0 || tokens <= m.Context*95/100
 }
 
-// fittingTier returns the first tier from start whose model fits about
-// estimate tokens, and a note when it is not start. When no tier fits, it
-// returns the last tier.
-func (s *Server) fittingTier(ctx context.Context, tiers []store.Tier, start int, estimate int64) (int, string, error) {
+// fittingTier returns the first tier from start whose model fits the request,
+// and a note when it is not start. A tier qualifies when its context window
+// holds the estimate and, when needsVision is true, it accepts images. When no
+// tier qualifies, it returns the last tier.
+func (s *Server) fittingTier(ctx context.Context, tiers []store.Tier, start int, estimate int64, needsVision bool) (int, string, error) {
 	var first store.Model
 	for i := start; i < len(tiers); i++ {
 		m, err := s.store.GetModel(ctx, tiers[i].ModelID)
@@ -88,13 +89,31 @@ func (s *Server) fittingTier(ctx context.Context, tiers []store.Tier, start int,
 		if !fits(m, estimate) {
 			continue
 		}
+		if needsVision && !m.Vision {
+			continue
+		}
 		if i == start {
 			return i, "", nil
 		}
-		return i, fmt.Sprintf("about %s tokens do not fit %s (%s); moved to %s",
-			kiloTokens(estimate), first.ModelID, kiloTokens(first.Context), tiers[i].Label), nil
+		switch {
+		case needsVision && !first.Vision && !fits(first, estimate):
+			return i, fmt.Sprintf("about %s tokens do not fit %s (%s); request has an image; moved to %s",
+				kiloTokens(estimate), first.ModelID, kiloTokens(first.Context), tiers[i].Label), nil
+		case needsVision && !first.Vision:
+			return i, fmt.Sprintf("request has an image; moved to %s", tiers[i].Label), nil
+		case !fits(first, estimate):
+			return i, fmt.Sprintf("about %s tokens do not fit %s (%s); moved to %s",
+				kiloTokens(estimate), first.ModelID, kiloTokens(first.Context), tiers[i].Label), nil
+		}
 	}
 	last := len(tiers) - 1
+	lastModel, _ := s.store.GetModel(ctx, tiers[last].ModelID)
+	switch {
+	case needsVision && lastModel.Vision:
+		return last, fmt.Sprintf("request has an image; used %s", tiers[last].Label), nil
+	case needsVision:
+		return last, fmt.Sprintf("request has an image but no tier supports images; used %s", tiers[last].Label), nil
+	}
 	return last, fmt.Sprintf("about %s tokens fit no tier; used %s", kiloTokens(estimate), tiers[last].Label), nil
 }
 
