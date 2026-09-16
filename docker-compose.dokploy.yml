@@ -8,17 +8,21 @@
 #
 # IMPORTANT — what does NOT work in this container:
 #
-#  - Subscription tiers (Claude Code, OpenCode, Cursor, Codex, …) require
-#    `claude login` on the host. Subscription requests from a remote
-#    agent still pass through, but the gateway cannot *originate* calls
-#    to subscription upstreams — directors, advisors, classifiers, and
-#    the eval runner all refuse subscription traffic from a container.
-#  - Directors configured to answer through Claude Code (`viaClaudeCode`)
-#    need `claude` on PATH inside the container. Without it, fall back
-#    to an API-key director model.
-#  - The eval runner (`intelly-eval`) shells out to `claude -p` and
-#    expects a logged-in session. In a container, run the eval runner
-#    on the host instead.
+# The gateway relays subscription traffic end-to-end, so subscription
+# routes work. What does not work is the parts of the gateway that
+# originate their own subscription calls, because the container has no
+# Claude Code to log in with:
+#
+#  - The Claude-Code director (`DirectorSettings.ClaudeCode: true`)
+#    shells out to `claude`. Install Claude Code in the image or use
+#    an API-key director instead.
+#  - The subscription advisor uses the same `claude` call.
+#  - The eval runner (`intelly-eval`) spawns `claude -p` against a
+#    logged-in session. Run it on the host.
+#
+# Everything else (subscription passthrough, API-key directors, advisor
+# on API-key models, classifier, escalation tiers, combo strategies)
+# is fine inside this container.
 #
 # See .env.example for the full note on container limits.
 

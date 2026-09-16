@@ -78,7 +78,23 @@ go install github.com/MrMirhan/intellyrouter/cmd/intellyrouter@latest
 go install github.com/MrMirhan/intellyrouter/cmd/intelly-eval@latest
 ```
 
-Requires Go 1.27+.
+Requires Go 1.27+. The `go install` build does not embed the web
+dashboard — it skips the `webui` build tag, so the binary serves the
+gateway API on `/api/hello` and `/v1/messages` but not the dashboard at
+`/`. Build from source with `-tags webui` (see below) when you want the
+dashboard.
+
+### Build from source
+
+```sh
+git clone https://github.com/MrMirhan/intellyrouter
+cd intellyrouter
+make build
+```
+
+`make build` builds the gateway with `-tags webui` after running
+`bun install` and `bun run build` in `web/`. The Makefile runs the same
+checks CI does (`go vet ./...`, `go test ./...`).
 
 ### Docker
 
@@ -108,21 +124,27 @@ checks CI does (`go vet ./...`, `go test ./...`).
 
 ## Deploy
 
-**In a container, only API-key providers work.** The gateway never
-originates calls to subscription upstreams from a container because
-the container has no Claude Code to log in with. That excludes:
+The gateway *relays* subscription traffic end-to-end. Claude Code's
+own `/login` session reaches the upstream unchanged — the gateway only
+rewrites the `model` field, never the `Authorization` header. This
+works the same on a host, on Coolify, and on Dokploy.
 
-- Subscription tiers (Claude Code, OpenCode, Cursor, Codex, …) as the
-  executor in a remote agent setup.
-- Directors configured to answer through Claude Code
-  (`viaClaudeCode`).
-- The eval runner (`intelly-eval`), which shells out to `claude -p`
-  against a logged-in session.
+What does **not** work from a container, because the container has no
+Claude Code to log in with, is the parts of the gateway that originate
+their own subscription calls:
 
-Subscription traffic from a remote agent still passes through the
-container — the gateway only rewrites the `model` field. What the
-gateway refuses to do is *originate* subscription calls (director
-steps, advisor, classifier, eval runs).
+- **Claude-Code director** (`DirectorSettings.ClaudeCode: true`):
+  the gateway shells out to `claude` with the captured session. Inside
+  a container there is no `~/.claude/` to read; install Claude Code
+  in the image or use an API-key director instead.
+- **Subscription advisor**: same `claude` requirement.
+- **Eval runner** (`cmd/intelly-eval`): spawns `claude -p` against a
+  logged-in session. Run it on the host.
+
+Subscription routes and the eval runner's `claude` calls are the only
+parts that need Claude Code installed; everything else (subscription
+passthrough, API-key directors, advisor on API-key models, classifier,
+escalation tiers, combo strategies) is fine inside a container.
 
 `docker-compose.yml` is the Coolify / generic entry; `docker-compose.dokploy.yml`
 exists for per-app Dokploy stacks that want a different image tag.
