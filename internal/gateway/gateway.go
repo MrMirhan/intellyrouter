@@ -54,8 +54,12 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/messages", s.handleMessages)
 	mux.HandleFunc("POST /v1/messages/count_tokens", s.handleCountTokens)
 	mux.HandleFunc("GET /v1/models", s.handleModels)
-	// Claude Code sends a best-effort connection-warming probe here.
-	mux.HandleFunc("HEAD /api/hello", func(http.ResponseWriter, *http.Request) {})
+	// Claude Code sends a best-effort connection-warming probe here. GET
+	// answers too, because container healthchecks and uptime monitors send
+	// one and a HEAD-only endpoint reports the gateway as down.
+	hello := func(http.ResponseWriter, *http.Request) {}
+	mux.HandleFunc("HEAD /api/hello", hello)
+	mux.HandleFunc("GET /api/hello", hello)
 }
 
 // captureContent reports whether request content is captured. It reads the
