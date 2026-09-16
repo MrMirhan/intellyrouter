@@ -25,16 +25,29 @@ RUN CGO_ENABLED=0 go build -trimpath -tags webui -ldflags="-s -w" \
     -o /out/intelly-eval ./cmd/intelly-eval
 
 FROM alpine:3.20
-RUN apk add --no-cache ca-certificates tzdata \
- && addgroup -S intellyrouter && adduser -S -G intellyrouter intellyrouter
+# Claude Code lives in the same image so subscription directors, advisors,
+# and the eval runner can shell out to `claude`. The native installer pulls
+# a musl-compatible binary, so we do not need npm or Node on this stage.
+ARG CLAUDE_VERSION=stable
+ENV USE_BUILTIN_RIPGREP=0
+RUN apk add --no-cache ca-certificates tzdata bash curl libgcc libstdc++ ripgrep \
+ && addgroup -S intellyrouter && adduser -S -G intellyrouter -h /home/intellyrouter intellyrouter \
+ && curl -fsSL https://claude.ai/install.sh | bash -s ${CLAUDE_VERSION} \
+ && cp -r /root/.local /home/intellyrouter/.local \
+ && chown -R intellyrouter:intellyrouter /home/intellyrouter/.local
 COPY --from=go /out/intellyrouter /usr/local/bin/intellyrouter
 COPY --from=go /out/intelly-eval    /usr/local/bin/intelly-eval
 ENV INTELLYROUTER_ADDR=0.0.0.0:7117 \
     INTELLYROUTER_DATA=/data \
-    INTELLYROUTER_EVAL_TASKS=/eval-tasks
+    INTELLYROUTER_EVAL_TASKS=/eval-tasks \
+    CLAUDE_CONFIG_DIR=/data/.claude \
+    PATH=/home/intellyrouter/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin
 VOLUME ["/data", "/eval-tasks"]
 EXPOSE 7117
 USER intellyrouter
-# Exec form with a shell is the simplest portable way to expand env vars into
-# flag values without writing a wrapper entrypoint script.
-ENTRYPOINT ["sh", "-c", "exec intellyrouter -addr \"$INTELLYROUTER_ADDR\" -data \"$INTELLYROUTER_DATA\" -eval-tasks \"$INTELLYROUTER_EVAL_TASKS\""]
+WORKDIR /home/intellyrouter
+# Persistent volume at /data is mounted by compose. The host owner of that
+# volume is whatever created it (often root), which would block the
+# gateway from reading its own master.key. Take ownership at boot, then
+# hand off to the binary.
+ENTRYPOINT ["sh", "-c", "chown -R $(id -u):$(id -g) /data 2>/dev/null; mkdir -p /data/.claude; chown -R $(id -u):$(id -g) /data/.claude; exec intellyrouter -addr \"$INTELLYROUTER_ADDR\" -data \"$INTELLYROUTER_DATA\" -eval-tasks \"$INTELLYROUTER_EVAL_TASKS\""]
