@@ -129,25 +129,35 @@ own `/login` session reaches the upstream unchanged — the gateway only
 rewrites the `model` field, never the `Authorization` header. This
 works the same on a host, on Coolify, and on Dokploy.
 
-What does **not** work from a container, because the container has no
-Claude Code to log in with, is the parts of the gateway that originate
-their own subscription calls:
+The image bundles Claude Code (via the official native installer, not
+npm) so the gateway can shell out to `claude` for the Claude-Code
+director, the subscription advisor, and the eval runner. Login for
+those parts works two ways:
 
-- **Claude-Code director** (`DirectorSettings.ClaudeCode: true`):
-  the gateway shells out to `claude` with the captured session. Inside
-  a container there is no `~/.claude/` to read; install Claude Code
-  in the image or use an API-key director instead.
-- **Subscription advisor**: same `claude` requirement.
-- **Eval runner** (`cmd/intelly-eval`): spawns `claude -p` against a
-  logged-in session. Run it on the host.
+- **Headless — `claude setup-token`.** On the operator's laptop, run
+  `claude setup-token`. It opens a browser for approval, then prints a
+  one-year OAuth token. Paste the token into
+  `CLAUDE_CODE_OAUTH_TOKEN` in Dokploy/Coolify (or `.env` on a host).
+  Container restarts and image rebuilds keep the token, because
+  `CLAUDE_CONFIG_DIR=/data/.claude` is on the persistent volume.
+- **Interactive — `claude auth login`.** From the host,
+  `docker compose exec intellyrouter claude auth login`. A device code
+  is printed; paste it in a browser at `claude.ai/device`. The login
+  persists in `/data/.claude/.credentials.json`.
 
-Subscription routes and the eval runner's `claude` calls are the only
-parts that need Claude Code installed; everything else (subscription
-passthrough, API-key directors, advisor on API-key models, classifier,
-escalation tiers, combo strategies) is fine inside a container.
+Pick one or both. See `.env.example` for the exact env vars. API-key
+providers (`ANTHROPIC_API_KEY`) work alongside either login and let
+the gateway run without any Claude Code login at all — only API-key
+directors and advisors are useful in that mode.
 
-`docker-compose.yml` is the Coolify / generic entry; `docker-compose.dokploy.yml`
-exists for per-app Dokploy stacks that want a different image tag.
+Subscription routes work in every deployment mode. The Claude-Code
+director, the subscription advisor, and the eval runner all need
+either a Claude Code login or an API-key provider; pick by what your
+operators run.
+
+`docker-compose.yml` is the Coolify / generic entry;
+`docker-compose.dokploy.yml` exists for per-app Dokploy stacks that
+want a different image tag.
 
 ## Configuration
 
@@ -156,8 +166,9 @@ exists for per-app Dokploy stacks that want a different image tag.
   `-reset-admin-token` to rotate the admin token printed at first
   start.
 - **Env** — `INTELLYROUTER_ADDR`, `INTELLYROUTER_DATA`,
-  `INTELLYROUTER_EVAL_TASKS`. The Docker image picks them up by
-  default; see `.env.example`.
+  `INTELLYROUTER_EVAL_TASKS`, `CLAUDE_CONFIG_DIR`,
+  `CLAUDE_CODE_OAUTH_TOKEN` (or `ANTHROPIC_API_KEY`). The Docker image
+  picks them up by default; see `.env.example`.
 - **Dashboard** — Providers, Models, Routes, Combos, Keys, Sessions,
   Settings. All persisted in SQLite.
 - **Gateway key** — a static API key Claude Code presents as
