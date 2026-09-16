@@ -1,6 +1,11 @@
 /bin/
 /intellyrouter
 /intelly-eval
+.env
+.env.*
+!.env.example
+*.db
+master.key
 web/node_modules/
 web/dist/
 __pycache__/
