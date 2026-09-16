@@ -225,12 +225,23 @@ Claude Code sends the whole conversation in every request, and the gateway passe
 - The gateway reads the context window from the model's `context` field on the Providers page. Syncing fills it when the provider reports it. A model without a value counts as large enough.
 - Claude Code compacts the conversation at the window it assumes for the route name: 200K tokens, or 1M with the `[1m]` suffix. With `[1m]`, a route whose last tier has a smaller window than the conversation still fails, because no tier can hold the request.
 
+## Images
+
+A model that reads images has "Supports images" set on the Providers page. A request that carries an image or a document block goes to a tier with that setting:
+
+- The move applies to that request only. The turn keeps its own tier, so the next request without an image goes back to it.
+- The gateway first looks at the tiers above the turn's tier. If none of them takes images, it looks below, because a lower tier that reads the image is better than a higher tier that cannot.
+- A tier must also hold the request. A tier that takes images but has too small a context window does not serve it.
+- A combo has no setting of its own. It takes images when one of its models does.
+- When no tier takes images, the request goes to the last tier and the leg note says so. The model then answers as if the image were not there, or rejects it.
+
 ## Costs and savings
 
 - **API spend**: the cost of all calls that your providers bill.
 - **Cache writes**: a one-hour cache write costs two times the input price, and a five-minute cache write uses the model's cache write price. The ledger prices each write by its TTL.
 - **Subscription value**: Claude subscription usage at API prices. It costs you nothing extra, but it uses your plan limits. The dashboard also shows the latest rate-limit headers from Anthropic.
-- **Routing vs one model**: the Overview and each session price the work tokens (all calls except classifier and director checkpoint calls) at one model, for example Claude Fable 5.1, and compare that with what the routing actually used (API spend plus subscription value). A single model would use a different number of tokens and turns, so this value is an estimate.
+- **Routing vs one model**: the Overview and each session price the work tokens at one model, for example Claude Fable 5.1, and compare that with what the routing actually used (API spend plus subscription value). Work tokens are the calls that answered the client: the classifier, the advisor, and the director's checkpoint calls are routing overhead and do not count, but a director that answers a step itself does. A single model would use a different number of tokens and turns, so this value is an estimate.
+- **Saved**: the Sessions list prices each session's work tokens at the model that served most of its director calls, and shows the gap to what the session spent. The session detail opens the same comparison on that model. A session with no director call uses the reference model from the settings.
 - **Estimated savings**: the cost of the base-tier tokens at the price of the route's top model (the director model for guided routes, or the reference model for direct routes), minus the API spend. Classifier and director calls show as routing overhead. Different models use different numbers of tokens and turns, so this value is an estimate. Use the eval runner for a measured comparison.
 
 ## Eval
