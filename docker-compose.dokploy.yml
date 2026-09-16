@@ -1,30 +1,9 @@
 # Dokploy deploy file. Dokploy reads docker-compose.yml by default; this
-# file exists so a per-app Dokploy stack can be configured with a
-# different name and image tag without touching the Coolify/generic
-# compose file.
+# file exists so a per-app Dokploy stack can be configured with a different
+# name and image tag without touching the Coolify/generic compose file.
 #
-# All env values come from Dokploy's environment variable panel, set on
-# the app's Configuration screen. The example values match docker-compose.yml.
-#
-# IMPORTANT — what does NOT work in this container:
-#
-# The gateway relays subscription traffic end-to-end, so subscription
-# routes work. What does not work is the parts of the gateway that
-# originate their own subscription calls, because the container has no
-# Claude Code to log in with:
-#
-#  - The Claude-Code director (`DirectorSettings.ClaudeCode: true`)
-#    shells out to `claude`. Install Claude Code in the image or use
-#    an API-key director instead.
-#  - The subscription advisor uses the same `claude` call.
-#  - The eval runner (`intelly-eval`) spawns `claude -p` against a
-#    logged-in session. Run it on the host.
-#
-# Everything else (subscription passthrough, API-key directors, advisor
-# on API-key models, classifier, escalation tiers, combo strategies)
-# is fine inside this container.
-#
-# See .env.example for the full note on container limits.
+# All env values come from Dokploy's environment variable panel, set on the
+# app's Configuration screen. The example values match docker-compose.yml.
 
 services:
   intellyrouter:
@@ -32,16 +11,19 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        CLAUDE_VERSION: stable
     restart: unless-stopped
     environment:
       INTELLYROUTER_ADDR: 0.0.0.0:7117
       INTELLYROUTER_DATA: /data
       INTELLYROUTER_EVAL_TASKS: /eval-tasks
+      CLAUDE_CONFIG_DIR: /data/.claude
+      # CLAUDE_CODE_OAUTH_TOKEN: sk-ant-oat01-...   # headless login token
+      # ANTHROPIC_API_KEY: sk-ant-api03-...         # or direct API-key
     volumes:
       - gateway-data:/data
       - ./eval/tasks:/eval-tasks:ro
-    ports:
-      - "127.0.0.1:7117:7117"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:7117/api/hello"]
       interval: 30s

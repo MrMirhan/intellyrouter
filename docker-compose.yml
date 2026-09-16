@@ -1,5 +1,5 @@
 # Coolify / Dokploy-compatible compose file. Mount a persistent volume at
-# /data so `master.key` and `intellyrouter.db` survive container restarts;
+# /data so `master.key` and the SQLite database survive container restarts;
 # without it, every restart re-encrypts provider keys under a new master key
 # and the dashboard has to re-paste them.
 #
@@ -12,12 +12,22 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Pin Claude Code version baked into the image. Override per build
+        # with `--build-arg CLAUDE_VERSION=2.1.89`. `stable` is usually a
+        # week behind; `latest` ships every release.
+        CLAUDE_VERSION: stable
     image: ghcr.io/mrmirhan/intellyrouter:dev
     restart: unless-stopped
     environment:
       INTELLYROUTER_ADDR: 0.0.0.0:7117
       INTELLYROUTER_DATA: /data
       INTELLYROUTER_EVAL_TASKS: /eval-tasks
+      CLAUDE_CONFIG_DIR: /data/.claude
+      # Pick one (or both). Empty is fine if you only use API-key providers
+      # and don't run the eval runner or a Claude-Code director.
+      # CLAUDE_CODE_OAUTH_TOKEN: sk-ant-oat01-...
+      # ANTHROPIC_API_KEY: sk-ant-api03-...
     volumes:
       - gateway-data:/data
       # Mount the eval tasks directory from the host so you can edit them
