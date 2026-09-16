@@ -21,6 +21,12 @@ services:
       CLAUDE_CONFIG_DIR: /data/.claude
       # CLAUDE_CODE_OAUTH_TOKEN: sk-ant-oat01-...   # headless login token
       # ANTHROPIC_API_KEY: sk-ant-api03-...         # or direct API-key
+    ports:
+      # Where the host publishes the gateway. Loopback by default, so a fresh
+      # deploy is not exposed. Set INTELLYROUTER_PUBLISH to reach it from other
+      # machines: a LAN or tailnet address such as 100.64.0.1:7117, or
+      # 0.0.0.0:7117 behind a reverse proxy that terminates TLS.
+      - "${INTELLYROUTER_PUBLISH:-127.0.0.1:7117}:7117"
     volumes:
       - gateway-data:/data
       - ./eval/tasks:/eval-tasks:ro

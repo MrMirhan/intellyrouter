@@ -36,7 +36,11 @@ services:
       # COPY eval/tasks /eval-tasks back into the Dockerfile.
       - ./eval/tasks:/eval-tasks:ro
     ports:
-      - "127.0.0.1:7117:7117"
+      # Loopback by default, so a fresh deploy is not exposed. Set
+      # INTELLYROUTER_PUBLISH to reach it from other machines: a LAN or tailnet
+      # address such as 100.64.0.1:7117, or 0.0.0.0:7117 behind a reverse proxy
+      # that terminates TLS.
+      - "${INTELLYROUTER_PUBLISH:-127.0.0.1:7117}:7117"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:7117/api/hello"]
       interval: 30s
