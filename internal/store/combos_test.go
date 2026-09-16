@@ -44,6 +44,20 @@ func TestCombos(t *testing.T) {
 		t.Fatalf("duplicate combo name: %v", err)
 	}
 
+	if vision, err := s.ComboVision(ctx, c.ID); err != nil || vision {
+		t.Fatalf("ComboVision with no member that takes images = %v, %v", vision, err)
+	}
+	m3.Vision = true
+	if err := s.UpdateModel(ctx, m3); err != nil {
+		t.Fatal(err)
+	}
+	if vision, err := s.ComboVision(ctx, c.ID); err != nil || !vision {
+		t.Fatalf("ComboVision with a member that takes images = %v, %v", vision, err)
+	}
+	if vision, err := s.ComboVision(ctx, m27.ID); err != nil || vision {
+		t.Fatalf("ComboVision of a model that is not a combo = %v, %v", vision, err)
+	}
+
 	c.Name, c.Strategy, c.Members = "stack-2", ComboRoundRobin, []int64{m3.ID}
 	if err := s.UpdateCombo(ctx, c); err != nil {
 		t.Fatal(err)

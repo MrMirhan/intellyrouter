@@ -115,6 +115,16 @@ func (s *Store) DeleteCombo(ctx context.Context, id int64) error {
 	return affected(s.db.ExecContext(ctx, `DELETE FROM models WHERE id = ? AND id IN (SELECT model_id FROM combos)`, id))
 }
 
+// ComboVision reports whether any member of the combo accepts images. A model
+// that is not a combo has no members, so it reports false.
+func (s *Store) ComboVision(ctx context.Context, id int64) (bool, error) {
+	var vision bool
+	err := s.db.QueryRowContext(ctx, `
+SELECT COALESCE(MAX(m.vision), 0) FROM models m
+JOIN combo_members cm ON cm.model_id = m.id WHERE cm.combo_id = ?`, id).Scan(&vision)
+	return vision, err
+}
+
 func (s *Store) GetCombo(ctx context.Context, id int64) (Combo, error) {
 	combos, err := s.listCombos(ctx, `WHERE c.model_id = ?`, id)
 	if err != nil {

@@ -72,34 +72,46 @@ func fits(m store.Model, tokens int64) bool {
 	return m.Context <= 0 || tokens <= m.Context*95/100
 }
 
+// acceptsImages reports whether the model takes image blocks. A combo row has
+// no vision flag of its own, so any member that takes images makes it accept them.
+func (s *Server) acceptsImages(ctx context.Context, m store.Model) bool {
+	if m.Vision {
+		return true
+	}
+	vision, err := s.store.ComboVision(ctx, m.ID)
+	return err == nil && vision
+}
+
 // fittingTier returns the first tier from start whose model fits the request,
 // and a note when it is not start. A tier qualifies when its context window
 // holds the estimate and, when needsVision is true, it accepts images. When no
 // tier qualifies, it returns the last tier.
 func (s *Server) fittingTier(ctx context.Context, tiers []store.Tier, start int, estimate int64, needsVision bool) (int, string, error) {
 	var first store.Model
+	firstVision := false
 	for i := start; i < len(tiers); i++ {
 		m, err := s.store.GetModel(ctx, tiers[i].ModelID)
 		if err != nil {
 			return 0, "", err
 		}
+		vision := needsVision && s.acceptsImages(ctx, m)
 		if i == start {
-			first = m
+			first, firstVision = m, vision
 		}
 		if !fits(m, estimate) {
 			continue
 		}
-		if needsVision && !m.Vision {
+		if needsVision && !vision {
 			continue
 		}
 		if i == start {
 			return i, "", nil
 		}
 		switch {
-		case needsVision && !first.Vision && !fits(first, estimate):
+		case needsVision && !firstVision && !fits(first, estimate):
 			return i, fmt.Sprintf("about %s tokens do not fit %s (%s); request has an image; moved to %s",
 				kiloTokens(estimate), first.ModelID, kiloTokens(first.Context), tiers[i].Label), nil
-		case needsVision && !first.Vision:
+		case needsVision && !firstVision:
 			return i, fmt.Sprintf("request has an image; moved to %s", tiers[i].Label), nil
 		case !fits(first, estimate):
 			return i, fmt.Sprintf("about %s tokens do not fit %s (%s); moved to %s",
@@ -109,7 +121,7 @@ func (s *Server) fittingTier(ctx context.Context, tiers []store.Tier, start int,
 	last := len(tiers) - 1
 	lastModel, _ := s.store.GetModel(ctx, tiers[last].ModelID)
 	switch {
-	case needsVision && lastModel.Vision:
+	case needsVision && s.acceptsImages(ctx, lastModel):
 		return last, fmt.Sprintf("request has an image; used %s", tiers[last].Label), nil
 	case needsVision:
 		return last, fmt.Sprintf("request has an image but no tier supports images; used %s", tiers[last].Label), nil
