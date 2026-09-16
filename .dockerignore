@@ -1,0 +1,16 @@
+bin/
+intellyrouter
+intelly-eval
+web/dist/
+web/node_modules/
+__pycache__/
+.DS_Store
+*.test
+*.out
+coverage.txt
+.git/
+.idea/
+.vscode/
+*.swp
+fixtures/
+.claude/
