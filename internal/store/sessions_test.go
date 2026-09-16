@@ -16,6 +16,7 @@ func TestSessions(t *testing.T) {
 			Legs: []Leg{
 				{Role: "director", Provider: "a", Model: "opus", Billing: "api", InputTokens: 100, OutputTokens: 10, CostUSD: 0.02, LatencyMS: 300, Status: "ok", Note: "checkpoint: plan"},
 				{Seq: 1, Role: "executor", Provider: "d", Model: "flash", Billing: "api", InputTokens: 1000, OutputTokens: 50, CacheReadTokens: 400, CostUSD: 0.01, LatencyMS: 700, Status: "ok"},
+				{Seq: 2, Role: "advisor", Provider: "d", Model: "flash", Billing: "api", LatencyMS: 120, Status: "ok", Note: "question: which file?"},
 			},
 		},
 		{
@@ -55,7 +56,7 @@ func TestSessions(t *testing.T) {
 		{"first ts", s1.FirstTS, 1000}, {"last ts", s1.LastTS, 3000}, {"requests", s1.Requests, 3}, {"errors", s1.Errors, 1},
 		{"agents", s1.Agents, 2}, {"input", s1.InputTokens, 3630}, {"output", s1.OutputTokens, 283},
 		{"cache read", s1.CacheReadTokens, 400}, {"cache write", s1.CacheWriteTokens, 100},
-		{"director calls", s1.DirectorCalls, 2}, {"captured", s1.CapturedRequests, 1},
+		{"director calls", s1.DirectorCalls, 2}, {"advisor calls", s1.AdvisorCalls, 1}, {"captured", s1.CapturedRequests, 1},
 	}
 	for _, c := range ints {
 		if c.got != c.want {
@@ -65,7 +66,7 @@ func TestSessions(t *testing.T) {
 	if math.Abs(s1.CostUSD-0.031) > 1e-9 || math.Abs(s1.SubscriptionValueUSD-0.7) > 1e-9 {
 		t.Errorf("s1 cost = %v, subscription value = %v", s1.CostUSD, s1.SubscriptionValueUSD)
 	}
-	wantModels := []ModelCalls{{"flash", "api", 2}, {"opus", "subscription", 2}, {"opus", "api", 1}}
+	wantModels := []ModelCalls{{"flash", "api", 3}, {"opus", "subscription", 2}, {"opus", "api", 1}}
 	if !reflect.DeepEqual(s1.Routes, []string{"auto", "guided"}) || !reflect.DeepEqual(s1.Models, wantModels) {
 		t.Errorf("s1 routes = %v, models = %+v", s1.Routes, s1.Models)
 	}
@@ -79,11 +80,12 @@ func TestSessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(sess.Summary, s1) || len(sess.ByModel) != 5 {
+	if !reflect.DeepEqual(sess.Summary, s1) || len(sess.ByModel) != 6 {
 		t.Errorf("session summary = %+v, by model = %+v", sess.Summary, sess.ByModel)
 	}
-	if len(sess.Checkpoints) != 2 || sess.Checkpoints[0].RequestID != ids[0] || sess.Checkpoints[0].Billing != "api" ||
-		sess.Checkpoints[1].Note != "director step: review" || sess.Checkpoints[1].LatencyMS != 400 {
+	if len(sess.Checkpoints) != 3 || sess.Checkpoints[0].RequestID != ids[0] || sess.Checkpoints[0].Billing != "api" ||
+		sess.Checkpoints[1].Role != "advisor" || sess.Checkpoints[1].Note != "question: which file?" ||
+		sess.Checkpoints[2].Note != "director step: review" || sess.Checkpoints[2].LatencyMS != 400 {
 		t.Errorf("checkpoints = %+v", sess.Checkpoints)
 	}
 	// Work skips the classifier and the API director consult but keeps the subscription director step.

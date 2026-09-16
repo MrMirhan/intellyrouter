@@ -295,6 +295,7 @@ export interface SessionSummary {
   cache_read_tokens: number
   cache_write_tokens: number
   director_calls: number
+  advisor_calls: number
   captured_requests: number
 }
 
@@ -325,6 +326,7 @@ export interface SessionModelUsage {
 export interface SessionCheckpoint {
   request_id: number
   ts: number
+  role: LegRole
   model: string
   billing: Billing
   status: string

@@ -188,6 +188,7 @@ export function SessionsPage() {
                 <TableHead className="text-right">Requests</TableHead>
                 <TableHead>Models</TableHead>
                 <TableHead className="text-right">Director calls</TableHead>
+                <TableHead className="text-right">Advisor calls</TableHead>
                 <TableHead className="text-right">API cost</TableHead>
                 <TableHead className="text-right">Subscription value</TableHead>
                 <TableHead className="text-right">Errors</TableHead>
@@ -196,7 +197,7 @@ export function SessionsPage() {
             </TableHeader>
             <TableBody>
               {sessions.isPending ? (
-                <TableSkeleton columns={10} rows={10} />
+                <TableSkeleton columns={11} rows={10} />
               ) : (
                 items.map((item) => (
                   <TableRow key={item.session_id}>
@@ -227,6 +228,9 @@ export function SessionsPage() {
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {formatCount(item.director_calls)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatCount(item.advisor_calls)}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {formatUsd(item.cost_usd)}

@@ -141,18 +141,21 @@ function Checkpoints({ items }: { items: SessionCheckpoint[] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Director checkpoints</CardTitle>
-        <CardDescription>Each time the director checked the work, with its note.</CardDescription>
+        <CardTitle>Director checkpoints and advisor questions</CardTitle>
+        <CardDescription>
+          Each time the director checked the work or the advisor answered the executor, with its note.
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">The director did not check this session.</p>
+          <p className="text-sm text-muted-foreground">The director and the advisor were not called in this session.</p>
         ) : (
           <ol className="grid gap-3">
             {items.map((item, index) => (
               <li key={`${item.request_id}-${index}`} className="grid gap-2 rounded-lg border p-3">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
                   <RelativeTime ms={item.ts} />
+                  <RoleBadge role={item.role} />
                   <span className="font-mono text-xs font-medium">{item.model}</span>
                   <BillingBadge billing={item.billing} />
                   <LegStatusBadge status={item.status} />
@@ -232,9 +235,8 @@ export function SessionDetailPage() {
   }
 
   const { summary, by_model: byModel, checkpoints, comparison, requests } = session.data
-  const directorCost = byModel
-    .filter((row) => row.role === "director")
-    .reduce((sum, row) => sum + row.cost_usd, 0)
+  const roleCost = (role: string) =>
+    byModel.filter((row) => row.role === role).reduce((sum, row) => sum + row.cost_usd, 0)
 
   return (
     <>
@@ -260,7 +262,7 @@ export function SessionDetailPage() {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Kpi title="Requests" value={formatCount(summary.requests)}>
           <p>
             {formatPlural(summary.errors, "error")} · {formatPlural(summary.agents, "agent")}
@@ -278,7 +280,10 @@ export function SessionDetailPage() {
           <p>Valued at API prices. It costs nothing extra but counts toward your limits.</p>
         </Kpi>
         <Kpi title="Director calls" value={formatCount(summary.director_calls)}>
-          <p>Director cost {formatUsd(directorCost)}</p>
+          <p>Director cost {formatUsd(roleCost("director"))}</p>
+        </Kpi>
+        <Kpi title="Advisor calls" value={formatCount(summary.advisor_calls)}>
+          <p>Advisor cost {formatUsd(roleCost("advisor"))}</p>
         </Kpi>
       </div>
 

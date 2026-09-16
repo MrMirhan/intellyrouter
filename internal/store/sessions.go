@@ -33,6 +33,7 @@ type SessionSummary struct {
 	CacheReadTokens      int64
 	CacheWriteTokens     int64
 	DirectorCalls        int64
+	AdvisorCalls         int64
 	CapturedRequests     int64
 }
 
@@ -49,10 +50,11 @@ type SessionModelStats struct {
 	LatencyMS        int64
 }
 
-// Checkpoint is a director leg of a session.
+// Checkpoint is a director or advisor leg of a session.
 type Checkpoint struct {
 	RequestID int64
 	TS        int64
+	Role      string
 	Model     string
 	Billing   string
 	Status    string
@@ -119,12 +121,12 @@ GROUP BY l.role, l.model, l.billing ORDER BY COUNT(*) DESC, l.model, l.role`,
 		return Session{}, err
 	}
 	err = s.each(ctx, `
-SELECT r.id, r.ts, l.model, l.billing, l.status, l.note, l.latency_ms
-FROM legs l JOIN requests r ON r.id = l.request_id WHERE r.session_id = ? AND l.role = 'director'
+SELECT r.id, r.ts, l.role, l.model, l.billing, l.status, l.note, l.latency_ms
+FROM legs l JOIN requests r ON r.id = l.request_id WHERE r.session_id = ? AND l.role IN ('director', 'advisor')
 ORDER BY r.ts, r.id, l.seq`,
 		[]any{id}, func(rows *sql.Rows) error {
 			var c Checkpoint
-			if err := rows.Scan(&c.RequestID, &c.TS, &c.Model, &c.Billing, &c.Status, &c.Note, &c.LatencyMS); err != nil {
+			if err := rows.Scan(&c.RequestID, &c.TS, &c.Role, &c.Model, &c.Billing, &c.Status, &c.Note, &c.LatencyMS); err != nil {
 				return err
 			}
 			out.Checkpoints = append(out.Checkpoints, c)
@@ -198,14 +200,14 @@ GROUP BY r.session_id ORDER BY MAX(r.ts) DESC, r.session_id LIMIT ? OFFSET ?`,
 	in := placeholders(len(ids))
 	err = s.each(ctx, `
 SELECT r.session_id, l.model, l.billing, COUNT(*), SUM(l.input_tokens), SUM(l.output_tokens), SUM(l.cache_read_tokens),
-  SUM(l.cache_write_tokens), SUM(l.role = 'director')
+  SUM(l.cache_write_tokens), SUM(l.role = 'director'), SUM(l.role = 'advisor')
 FROM legs l JOIN requests r ON r.id = l.request_id WHERE r.session_id IN (`+in+`)
 GROUP BY r.session_id, l.model, l.billing ORDER BY COUNT(*) DESC, l.model`,
 		ids, func(rows *sql.Rows) error {
 			var id string
 			var m ModelCalls
-			var input, output, cacheRead, cacheWrite, director int64
-			if err := rows.Scan(&id, &m.Model, &m.Billing, &m.Calls, &input, &output, &cacheRead, &cacheWrite, &director); err != nil {
+			var input, output, cacheRead, cacheWrite, director, advisor int64
+			if err := rows.Scan(&id, &m.Model, &m.Billing, &m.Calls, &input, &output, &cacheRead, &cacheWrite, &director, &advisor); err != nil {
 				return err
 			}
 			sum := &out[index[id]]
@@ -215,6 +217,7 @@ GROUP BY r.session_id, l.model, l.billing ORDER BY COUNT(*) DESC, l.model`,
 			sum.CacheReadTokens += cacheRead
 			sum.CacheWriteTokens += cacheWrite
 			sum.DirectorCalls += director
+			sum.AdvisorCalls += advisor
 			return nil
 		})
 	if err != nil {

@@ -31,6 +31,7 @@ type sessionSummaryJSON struct {
 	CacheReadTokens      int64              `json:"cache_read_tokens"`
 	CacheWriteTokens     int64              `json:"cache_write_tokens"`
 	DirectorCalls        int64              `json:"director_calls"`
+	AdvisorCalls         int64              `json:"advisor_calls"`
 	CapturedRequests     int64              `json:"captured_requests"`
 }
 
@@ -52,6 +53,7 @@ type sessionByModelJSON struct {
 type checkpointJSON struct {
 	RequestID int64  `json:"request_id"`
 	TS        int64  `json:"ts"`
+	Role      string `json:"role"`
 	Model     string `json:"model"`
 	Billing   string `json:"billing"`
 	Status    string `json:"status"`
@@ -88,7 +90,7 @@ func toSessionSummaryJSON(s store.SessionSummary) sessionSummaryJSON {
 		Routes: s.Routes, Models: make([]sessionModelJSON, 0, len(s.Models)),
 		CostUSD: s.CostUSD, SubscriptionValueUSD: s.SubscriptionValueUSD,
 		InputTokens: s.InputTokens, OutputTokens: s.OutputTokens, CacheReadTokens: s.CacheReadTokens, CacheWriteTokens: s.CacheWriteTokens,
-		DirectorCalls: s.DirectorCalls, CapturedRequests: s.CapturedRequests,
+		DirectorCalls: s.DirectorCalls, AdvisorCalls: s.AdvisorCalls, CapturedRequests: s.CapturedRequests,
 	}
 	for _, m := range s.Models {
 		out.Models = append(out.Models, sessionModelJSON(m))
