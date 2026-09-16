@@ -24,7 +24,7 @@ RUN CGO_ENABLED=0 go build -trimpath -tags webui -ldflags="-s -w" \
  && CGO_ENABLED=0 go build -trimpath -tags webui -ldflags="-s -w" \
     -o /out/intelly-eval ./cmd/intelly-eval
 
-FROM alpine:3.20
+FROM alpine:3.24
 # Claude Code lives in the same image so subscription directors, advisors,
 # and the eval runner can shell out to `claude`. The native installer pulls
 # a musl-compatible binary, so we do not need npm or Node on this stage.
