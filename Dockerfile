@@ -46,8 +46,9 @@ VOLUME ["/data", "/eval-tasks"]
 EXPOSE 7117
 USER intellyrouter
 WORKDIR /home/intellyrouter
-# Persistent volume at /data is mounted by compose. The host owner of that
-# volume is whatever created it (often root), which would block the
-# gateway from reading its own master.key. Take ownership at boot, then
-# hand off to the binary.
-ENTRYPOINT ["sh", "-c", "chown -R $(id -u):$(id -g) /data 2>/dev/null; mkdir -p /data/.claude; chown -R $(id -u):$(id -g) /data/.claude; exec intellyrouter -addr \"$INTELLYROUTER_ADDR\" -data \"$INTELLYROUTER_DATA\" -eval-tasks \"$INTELLYROUTER_EVAL_TASKS\""]
+# The persistent volume at /data may be owned by root (Dokploy/Coolify
+# default). Run the entrypoint as root so we can chown the volume, then
+# drop privileges to intellyrouter with `su` — available on every busybox
+# image, no extra binary needed. master.key mode 0o600 means the owner
+# must be intellyrouter for the gateway to read it.
+ENTRYPOINT ["sh", "-c", "mkdir -p /data/.claude && chown -R intellyrouter:intellyrouter /data && exec su -s /bin/sh intellyrouter -c 'exec intellyrouter -addr \"$INTELLYROUTER_ADDR\" -data \"$INTELLYROUTER_DATA\" -eval-tasks \"$INTELLYROUTER_EVAL_TASKS\"'"]
