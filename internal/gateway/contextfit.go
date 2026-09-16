@@ -118,6 +118,19 @@ func (s *Server) fittingTier(ctx context.Context, tiers []store.Tier, start int,
 				kiloTokens(estimate), first.ModelID, kiloTokens(first.Context), tiers[i].Label), nil
 		}
 	}
+	// No tier from start takes the image, so a lower tier that does serves this
+	// request. The turn keeps its own tier.
+	if needsVision {
+		for i := start - 1; i >= 0; i-- {
+			m, err := s.store.GetModel(ctx, tiers[i].ModelID)
+			if err != nil {
+				return 0, "", err
+			}
+			if fits(m, estimate) && s.acceptsImages(ctx, m) {
+				return i, fmt.Sprintf("request has an image; moved down to %s", tiers[i].Label), nil
+			}
+		}
+	}
 	last := len(tiers) - 1
 	lastModel, _ := s.store.GetModel(ctx, tiers[last].ModelID)
 	switch {
