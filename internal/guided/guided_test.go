@@ -248,7 +248,7 @@ func TestInjectGuidance(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := compact.String()
-	out, err := InjectGuidance([]byte(body), "1. Run go test -race.", ReasonUnsure, false)
+	out, err := InjectGuidance([]byte(body), "1. Run go test -race.", ReasonUnsure)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,19 +271,47 @@ func TestInjectGuidance(t *testing.T) {
 		t.Fatalf("last message = %+v", last)
 	}
 
-	plain, err := InjectGuidance([]byte(`{"messages":[{"role":"user","content":"hi"}]}`), "Plan.", ReasonTurnStart, false)
+	plain, err := InjectGuidance([]byte(`{"messages":[{"role":"user","content":"hi"}]}`), "Plan.", ReasonTurnStart)
 	if err != nil || !json.Valid(plain) || !strings.Contains(string(plain), `[{"type":"text","text":"hi"},{"type":"text","text":"\u003cdirector-guidance`) {
 		t.Fatalf("string content: %s, %v", plain, err)
 	}
 
-	// A later copy of the same guidance says the executor has read it, so it
-	// continues instead of starting the finished steps again.
-	again, err := InjectGuidance([]byte(body), "1. Run go test -race.", ReasonUnsure, true)
-	if err != nil {
-		t.Fatal(err)
+}
+
+func TestStripEchoedGuidance(t *testing.T) {
+	// An executor that copies the block into its reply leaves it in the
+	// history, where it teaches the executor to copy it again.
+	echoed := `{"messages":[` +
+		`{"role":"user","content":"fix the bug"},` +
+		`{"role":"assistant","content":[{"type":"text","text":"<director-guidance checkpoint=\"turn start\">\n1. Read the file.\n</director-guidance>\nHere is the fix."}]},` +
+		`{"role":"user","content":"go on"}]}`
+	out, cut, err := StripEchoedGuidance([]byte(echoed))
+	if err != nil || !cut {
+		t.Fatalf("StripEchoedGuidance = %v, %v", cut, err)
 	}
-	if !strings.Contains(string(again), "you have read it before") || strings.Contains(string(again), "A senior director reviewed") {
-		t.Fatalf("repeat note missing: %s", again)
+	if strings.Contains(string(out), "director-guidance") || !strings.Contains(string(out), "Here is the fix.") {
+		t.Fatalf("block still there: %s", out)
+	}
+
+	// A copy that lost its closing marker runs to the end of the block.
+	truncated := `{"messages":[{"role":"assistant","content":[{"type":"text","text":"Done.\n<director-guidance checkpoint=\"repeated action\">\nA senior director reviewed"}]}]}`
+	out, cut, err = StripEchoedGuidance([]byte(truncated))
+	if err != nil || !cut || strings.Contains(string(out), "director-guidance") || !strings.Contains(string(out), "Done.") {
+		t.Fatalf("truncated block: %s, %v, %v", out, cut, err)
+	}
+
+	// The user's own turn keeps the text: only the executor's copy is a problem.
+	user := `{"messages":[{"role":"user","content":"why does <director-guidance leak?"}]}`
+	out, cut, err = StripEchoedGuidance([]byte(user))
+	if err != nil || cut || string(out) != user {
+		t.Fatalf("user message changed: %s, %v, %v", out, cut, err)
+	}
+
+	// A clean body keeps its bytes, so the prompt cache still covers it.
+	clean := `{"messages":[{"role":"assistant","content":"all good"}]}`
+	out, cut, err = StripEchoedGuidance([]byte(clean))
+	if err != nil || cut || string(out) != clean {
+		t.Fatalf("clean body changed: %s, %v, %v", out, cut, err)
 	}
 }
 

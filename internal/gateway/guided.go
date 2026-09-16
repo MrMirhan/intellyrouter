@@ -108,18 +108,24 @@ func (s *Server) guided(w http.ResponseWriter, r *http.Request, route store.Rout
 	if fitNote != "" {
 		note += "; " + fitNote
 	}
+	if stripped, cut, err := guided.StripEchoedGuidance(body); err == nil && cut {
+		body = stripped
+		note += "; dropped guidance the executor had echoed"
+	}
 	switch {
 	case st.Guidance == "":
+	case st.GuidanceSent:
+		// The executor read this guidance on an earlier request of the turn.
+		// Sending it again makes it start the finished steps over.
+		note += "; guidance already delivered"
 	case executor.subscription():
 		note += "; guidance not added to a subscription request"
 	default:
-		if injected, err := guided.InjectGuidance(body, st.Guidance, st.GuidanceReason, st.GuidanceSent); err == nil {
+		if injected, err := guided.InjectGuidance(body, st.Guidance, st.GuidanceReason); err == nil {
 			body, added = injected, st.Guidance
 			note += "; guidance from " + st.GuidanceReason
-			if !st.GuidanceSent {
-				st.GuidanceSent = true
-				s.guidedTurns.Put(key, st)
-			}
+			st.GuidanceSent = true
+			s.guidedTurns.Put(key, st)
 		} else {
 			note += "; guidance not added: " + err.Error()
 		}

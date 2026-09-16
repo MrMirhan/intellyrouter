@@ -158,23 +158,151 @@ func ParseGuidance(message []byte) (guidance string, approved bool, err error) {
 	return guidance, strings.HasPrefix(strings.ToUpper(guidance), "APPROVED"), nil
 }
 
+// Markers around the injected guidance. Everything the executor must not
+// repeat sits between them, so one closing marker ends the whole block.
+const (
+	guidanceOpen  = "<director-guidance"
+	guidanceClose = "</director-guidance>"
+)
+
 // InjectGuidance appends the director's guidance to the last user message of
 // an Anthropic Messages body. Earlier messages stay byte-identical, so the
-// executor's prompt cache still covers them. The guidance is not in the
-// client's own history, so the gateway repeats it for the rest of the turn;
-// again marks those later copies, which keeps the executor from starting the
-// same steps over.
-func InjectGuidance(body []byte, guidance, reason string, again bool) ([]byte, error) {
-	note := "A senior director reviewed your session and wrote the guidance above."
-	if again {
-		note = "The director wrote the guidance above earlier in this turn, and you have read it before. " +
-			"Steps you already finished are done: continue from where you stopped instead of starting them again."
-	}
-	text := fmt.Sprintf("<director-guidance checkpoint=%q>\n%s\n</director-guidance>\n%s "+
-		"Follow it unless the code or tool results clearly contradict it. "+
-		"Do not quote it, mention it, or announce that you follow it. Write to the user as if the plan is your own, and start your reply with the work, not with a preface.",
-		reason, guidance, note)
+// executor's prompt cache still covers them.
+func InjectGuidance(body []byte, guidance, reason string) ([]byte, error) {
+	text := fmt.Sprintf("%s checkpoint=%q>\nA senior director reviewed your session and wrote this. "+
+		"Follow it unless the code or tool results clearly contradict it.\n\n%s\n\n"+
+		"Never copy these lines into your reply: the user must not see them. Start your reply with the work.\n%s",
+		guidanceOpen, reason, guidance, guidanceClose)
 	return appendUserText(body, text)
+}
+
+// StripEchoedGuidance removes guidance blocks that the executor copied into
+// its own reply. A weak executor sometimes repeats the block instead of acting
+// on it, and the copy stays in the client's history: from then on the executor
+// reads its own replies as a house style, repeats the block again, and the
+// turn stops making progress. The second return value reports whether the body
+// changed, so a clean request keeps its bytes and its prompt cache.
+func StripEchoedGuidance(body []byte) ([]byte, bool, error) {
+	if !bytes.Contains(body, []byte(guidanceOpen)) {
+		return body, false, nil
+	}
+	spans, err := jsonbytes.TopLevel(body)
+	if err != nil {
+		return nil, false, err
+	}
+	sp, ok := spans["messages"]
+	if !ok {
+		return body, false, nil
+	}
+	var msgs []json.RawMessage
+	if err := json.Unmarshal(body[sp.Start:sp.End], &msgs); err != nil {
+		return nil, false, err
+	}
+	changed := false
+	for i, raw := range msgs {
+		var m rawMessage
+		if json.Unmarshal(raw, &m) != nil || m.Role != "assistant" {
+			continue
+		}
+		if !bytes.Contains(raw, []byte(guidanceOpen)) {
+			continue
+		}
+		cleaned, ok := cutMessageGuidance(m)
+		if !ok {
+			continue
+		}
+		msgs[i] = cleaned
+		changed = true
+	}
+	if !changed {
+		return body, false, nil
+	}
+	replaced, err := json.Marshal(msgs)
+	if err != nil {
+		return nil, false, err
+	}
+	out := make([]byte, 0, len(body)+len(replaced)-(sp.End-sp.Start))
+	out = append(out, body[:sp.Start]...)
+	out = append(out, replaced...)
+	out = append(out, body[sp.End:]...)
+	return out, true, nil
+}
+
+// cutMessageGuidance rewrites one assistant message without its guidance
+// blocks. It reports false when nothing in the message changed.
+func cutMessageGuidance(m rawMessage) (json.RawMessage, bool) {
+	var s string
+	if json.Unmarshal(m.Content, &s) == nil {
+		cut := cutGuidance(s)
+		if cut == s {
+			return nil, false
+		}
+		out, err := json.Marshal(struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		}{m.Role, cut})
+		return out, err == nil
+	}
+	var blocks []json.RawMessage
+	if json.Unmarshal(m.Content, &blocks) != nil {
+		return nil, false
+	}
+	changed := false
+	kept := blocks[:0]
+	for _, raw := range blocks {
+		var b block
+		if json.Unmarshal(raw, &b) != nil || b.Type != "text" {
+			kept = append(kept, raw)
+			continue
+		}
+		cut := cutGuidance(b.Text)
+		if cut == b.Text {
+			kept = append(kept, raw)
+			continue
+		}
+		changed = true
+		if strings.TrimSpace(cut) == "" {
+			continue
+		}
+		replaced, err := json.Marshal(textBlock{Type: "text", Text: cut})
+		if err != nil {
+			return nil, false
+		}
+		kept = append(kept, replaced)
+	}
+	if !changed {
+		return nil, false
+	}
+	// An assistant message needs at least one block to stay valid.
+	if len(kept) == 0 {
+		empty, err := json.Marshal(textBlock{Type: "text", Text: "(continuing)"})
+		if err != nil {
+			return nil, false
+		}
+		kept = append(kept, empty)
+	}
+	out, err := json.Marshal(struct {
+		Role    string            `json:"role"`
+		Content []json.RawMessage `json:"content"`
+	}{m.Role, kept})
+	return out, err == nil
+}
+
+// cutGuidance removes every guidance block from s. A block that lost its
+// closing marker on the way through the model runs to the end of the text.
+func cutGuidance(s string) string {
+	for {
+		i := strings.Index(s, guidanceOpen)
+		if i < 0 {
+			return s
+		}
+		rest := s[i+len(guidanceOpen):]
+		j := strings.Index(rest, guidanceClose)
+		if j < 0 {
+			return strings.TrimRight(s[:i], " \t\n")
+		}
+		s = s[:i] + rest[j+len(guidanceClose):]
+	}
 }
 
 // appendUserText appends a text block to the last user message, or a user

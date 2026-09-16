@@ -156,7 +156,8 @@ func TestGuidedDirectorSteersExecutors(t *testing.T) {
 		{model: "deepseek-v4-flash", auth: "Bearer sk-deepseek", stream: true},
 		{model: "claude-fable-5-1", director: true},
 		{model: "deepseek-v4-flash", auth: "Bearer sk-deepseek", guidance: true, stream: true, consult: true},
-		{model: "deepseek-v4-flash", auth: "Bearer sk-deepseek", guidance: true, stream: true, consult: true},
+		// The executor read that guidance already, so this step goes without it.
+		{model: "deepseek-v4-flash", auth: "Bearer sk-deepseek", stream: true, consult: true},
 		{model: "claude-fable-5-1", director: true},
 		{model: "deepseek-v4-flash", auth: "Bearer sk-deepseek", guidance: true, stream: true, consult: true},
 		{model: "claude-fable-5-1", director: true},
