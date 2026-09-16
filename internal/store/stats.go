@@ -207,6 +207,36 @@ FROM legs l JOIN requests r ON r.id = l.request_id WHERE `+where, args...).Scan(
 	return w, err
 }
 
+// workTotalsBySession returns the work totals of the requested sessions, one
+// entry per session ID. Sessions with no legs are omitted; callers fill those
+// in themselves.
+func (s *Store) workTotalsBySession(ctx context.Context, ids []any) (map[string]WorkTotals, error) {
+	if len(ids) == 0 {
+		return map[string]WorkTotals{}, nil
+	}
+	out := make(map[string]WorkTotals, len(ids))
+	in := placeholders(len(ids))
+	err := s.each(ctx, `
+SELECT r.session_id,
+  COALESCE(SUM(CASE WHEN l.billing = 'subscription' THEN 0 ELSE l.cost_usd END), 0),
+  COALESCE(SUM(CASE WHEN l.billing = 'subscription' THEN l.cost_usd ELSE 0 END), 0),
+  COALESCE(SUM(CASE WHEN `+workLeg+` THEN l.input_tokens END), 0),
+  COALESCE(SUM(CASE WHEN `+workLeg+` THEN l.output_tokens END), 0),
+  COALESCE(SUM(CASE WHEN `+workLeg+` THEN l.cache_read_tokens END), 0),
+  COALESCE(SUM(CASE WHEN `+workLeg+` THEN l.cache_write_tokens END), 0)
+FROM legs l JOIN requests r ON r.id = l.request_id WHERE r.session_id IN (`+in+`)
+GROUP BY r.session_id`, ids, func(rows *sql.Rows) error {
+		var id string
+		var w WorkTotals
+		if err := rows.Scan(&id, &w.APIUSD, &w.SubscriptionValueUSD, &w.InputTokens, &w.OutputTokens, &w.CacheReadTokens, &w.CacheWriteTokens); err != nil {
+			return err
+		}
+		out[id] = w
+		return nil
+	})
+	return out, err
+}
+
 func (s *Store) each(ctx context.Context, query string, args []any, scan func(*sql.Rows) error) error {
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {

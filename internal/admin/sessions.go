@@ -33,6 +33,11 @@ type sessionSummaryJSON struct {
 	DirectorCalls        int64              `json:"director_calls"`
 	AdvisorCalls         int64              `json:"advisor_calls"`
 	CapturedRequests     int64              `json:"captured_requests"`
+	// SavedUSD is what the session would have cost on its director model alone.
+	SavedUSD float64 `json:"saved_usd"`
+	// SavedAgainst is the model the saved figure is priced against. Empty when
+	// the price is unknown.
+	SavedAgainst string `json:"saved_against"`
 }
 
 // sessionByModelJSON costs legs at their API-equivalent price, so subscription
@@ -84,13 +89,21 @@ type legContentJSON struct {
 	Output json.RawMessage `json:"output"`
 }
 
-func toSessionSummaryJSON(s store.SessionSummary) sessionSummaryJSON {
+func toSessionSummaryJSON(s store.SessionSummary, defaultRef string) sessionSummaryJSON {
+	ref := s.DirectorModel
+	if ref == "" {
+		ref = defaultRef
+	}
 	out := sessionSummaryJSON{
 		SessionID: s.SessionID, FirstTS: s.FirstTS, LastTS: s.LastTS, Requests: s.Requests, Errors: s.Errors, Agents: s.Agents,
 		Routes: s.Routes, Models: make([]sessionModelJSON, 0, len(s.Models)),
 		CostUSD: s.CostUSD, SubscriptionValueUSD: s.SubscriptionValueUSD,
 		InputTokens: s.InputTokens, OutputTokens: s.OutputTokens, CacheReadTokens: s.CacheReadTokens, CacheWriteTokens: s.CacheWriteTokens,
 		DirectorCalls: s.DirectorCalls, AdvisorCalls: s.AdvisorCalls, CapturedRequests: s.CapturedRequests,
+	}
+	if gap, ok := savedAgainst(ref, s.Work); ok {
+		out.SavedUSD = gap
+		out.SavedAgainst = ref
 	}
 	for _, m := range s.Models {
 		out.Models = append(out.Models, sessionModelJSON(m))
@@ -107,9 +120,14 @@ func (a *API) listSessions(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
+	defaultRef, err := a.referenceModel(r.Context())
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
 	out := make([]sessionSummaryJSON, 0, len(items))
 	for _, it := range items {
-		out = append(out, toSessionSummaryJSON(it))
+		out = append(out, toSessionSummaryJSON(it, defaultRef))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": out, "total": total})
 }
@@ -126,7 +144,7 @@ func (a *API) getSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := sessionJSON{
-		Summary:     toSessionSummaryJSON(sess.Summary),
+		Summary:     toSessionSummaryJSON(sess.Summary, ref),
 		ByModel:     make([]sessionByModelJSON, 0, len(sess.ByModel)),
 		Checkpoints: make([]checkpointJSON, 0, len(sess.Checkpoints)),
 		Comparison:  newComparison(ref, sess.Work),

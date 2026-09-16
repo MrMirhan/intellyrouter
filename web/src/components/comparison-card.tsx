@@ -34,16 +34,19 @@ function differenceText(difference: number, baseline: number): string {
 export function ComparisonCard({
   comparison,
   description,
+  baseline: initialBaseline,
 }: {
   comparison: Comparison
   description: string
+  baseline?: string
 }) {
   const selectId = useId()
-  const [baseline, setBaseline] = useState<string | null>(null)
+  const [baseline, setBaseline] = useState<string | null>(initialBaseline ?? null)
   const options = comparison.single_model
   const selected =
-    options.find((option) => option.model === (baseline ?? comparison.reference_model)) ??
-    options[0]
+    options.find(
+      (option) => option.model === (baseline ?? initialBaseline ?? comparison.reference_model),
+    ) ?? options[0]
   const tokens = comparison.work_tokens
 
   return (

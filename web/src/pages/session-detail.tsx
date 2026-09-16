@@ -290,6 +290,7 @@ export function SessionDetailPage() {
       <ComparisonCard
         comparison={comparison}
         description="What the work in this session would cost on one model at API prices."
+        baseline={byModel.find((row) => row.role === "director")?.model}
       />
 
       <WorkTable rows={byModel} />

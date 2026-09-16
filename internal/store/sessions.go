@@ -35,6 +35,11 @@ type SessionSummary struct {
 	DirectorCalls        int64
 	AdvisorCalls         int64
 	CapturedRequests     int64
+	// DirectorModel is the model that served the most director legs in the
+	// session, used as the baseline when a session saves against itself.
+	DirectorModel string
+	// Work is the session's tokens and cost, the same shape stats.go uses.
+	Work WorkTotals
 }
 
 type SessionModelStats struct {
@@ -236,5 +241,44 @@ GROUP BY r.session_id, l.model, l.billing ORDER BY COUNT(*) DESC, l.model`,
 	if err != nil {
 		return nil, err
 	}
+	director, err := s.directorModelsBySession(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	works, err := s.workTotalsBySession(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i].DirectorModel = director[out[i].SessionID]
+		out[i].Work = works[out[i].SessionID]
+	}
 	return out, nil
+}
+
+// directorModelsBySession returns, for each session, the model that handled
+// the most director legs. Sessions with no director leg are omitted.
+func (s *Store) directorModelsBySession(ctx context.Context, ids []any) (map[string]string, error) {
+	out := make(map[string]string, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	in := placeholders(len(ids))
+	err := s.each(ctx, `
+SELECT r.session_id, l.model
+FROM legs l JOIN requests r ON r.id = l.request_id
+WHERE r.session_id IN (`+in+`) AND l.role = 'director'
+GROUP BY r.session_id, l.model
+ORDER BY r.session_id, COUNT(*) DESC`,
+		ids, func(rows *sql.Rows) error {
+			var id, model string
+			if err := rows.Scan(&id, &model); err != nil {
+				return err
+			}
+			if _, ok := out[id]; !ok {
+				out[id] = model
+			}
+			return nil
+		})
+	return out, err
 }

@@ -300,6 +300,8 @@ export interface SessionSummary {
   director_calls: number
   advisor_calls: number
   captured_requests: number
+  saved_usd: number
+  saved_against: string
 }
 
 export interface SessionPage {

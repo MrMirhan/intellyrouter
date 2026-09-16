@@ -129,6 +129,23 @@ func newComparison(reference string, w store.WorkTotals) comparisonJSON {
 	return out
 }
 
+// savedAgainst prices the session's work tokens on model and returns the gap
+// between that price and what the session actually spent, plus true. A model
+// without a known price returns 0, false.
+func savedAgainst(model string, w store.WorkTotals) (float64, bool) {
+	p, ok := ledger.BuiltinPrice(model)
+	if !ok {
+		return 0, false
+	}
+	usage := ledger.Usage{Input: w.InputTokens, Output: w.OutputTokens, CacheRead: w.CacheReadTokens, CacheWrite: w.CacheWriteTokens}
+	actual := w.APIUSD + w.SubscriptionValueUSD
+	gap := p.Cost(usage) - actual
+	if gap < 0 {
+		gap = 0
+	}
+	return gap, true
+}
+
 func (a *API) getStats(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Query().Get("range")
 	if name == "" {
