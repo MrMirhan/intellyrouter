@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 var comboNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)

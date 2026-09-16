@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"intellyrouter/internal/ledger"
+	"github.com/MrMirhan/intellyrouter/internal/ledger"
 )
 
 type RemoteModel struct {

@@ -9,8 +9,8 @@ import (
 	"net/url"
 	"strings"
 
-	"intellyrouter/internal/ledger"
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/ledger"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 // Usage is what the gateway ledger recorded for one Claude Code session.

@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"intellyrouter/internal/ledger"
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/ledger"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 type legJSON struct {

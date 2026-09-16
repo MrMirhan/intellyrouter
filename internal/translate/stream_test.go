@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"intellyrouter/internal/sse"
+	"github.com/MrMirhan/intellyrouter/internal/sse"
 )
 
 type event struct{ name, data string }

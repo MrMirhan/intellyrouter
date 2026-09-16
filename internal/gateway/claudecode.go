@@ -9,10 +9,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"intellyrouter/internal/claudecli"
-	"intellyrouter/internal/guided"
-	"intellyrouter/internal/ledger"
-	"intellyrouter/internal/provider"
+	"github.com/MrMirhan/intellyrouter/internal/claudecli"
+	"github.com/MrMirhan/intellyrouter/internal/guided"
+	"github.com/MrMirhan/intellyrouter/internal/ledger"
+	"github.com/MrMirhan/intellyrouter/internal/provider"
 )
 
 const (

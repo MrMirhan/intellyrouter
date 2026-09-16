@@ -10,10 +10,10 @@ import (
 	"slices"
 	"strings"
 
-	"intellyrouter/internal/escalate"
-	"intellyrouter/internal/guided"
-	"intellyrouter/internal/provider"
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/escalate"
+	"github.com/MrMirhan/intellyrouter/internal/guided"
+	"github.com/MrMirhan/intellyrouter/internal/provider"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 type tierJSON struct {

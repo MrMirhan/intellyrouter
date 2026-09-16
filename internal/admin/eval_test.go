@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"intellyrouter/internal/admin"
-	"intellyrouter/internal/eval"
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/admin"
+	"github.com/MrMirhan/intellyrouter/internal/eval"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 func TestEvalEndpoints(t *testing.T) {

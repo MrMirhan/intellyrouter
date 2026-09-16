@@ -12,7 +12,7 @@ import (
 	"io"
 	"slices"
 
-	"intellyrouter/internal/jsonbytes"
+	"github.com/MrMirhan/intellyrouter/internal/jsonbytes"
 )
 
 // Content is what was captured for one request: the client body and, per leg,

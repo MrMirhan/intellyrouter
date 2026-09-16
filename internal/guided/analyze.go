@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"intellyrouter/internal/escalate"
+	"github.com/MrMirhan/intellyrouter/internal/escalate"
 )
 
 // Turn adds the signals of the current turn's tool loop to escalate.Turn.

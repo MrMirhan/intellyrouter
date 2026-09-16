@@ -4,7 +4,7 @@ package provider
 import (
 	"strings"
 
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 type Type string

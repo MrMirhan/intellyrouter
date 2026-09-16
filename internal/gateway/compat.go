@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"intellyrouter/internal/jsonbytes"
+	"github.com/MrMirhan/intellyrouter/internal/jsonbytes"
 )
 
 // Claude Code picks request features from the model name it sends, and a

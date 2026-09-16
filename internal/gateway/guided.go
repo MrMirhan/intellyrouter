@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"time"
 
-	"intellyrouter/internal/guided"
-	"intellyrouter/internal/ledger"
-	"intellyrouter/internal/provider"
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/guided"
+	"github.com/MrMirhan/intellyrouter/internal/ledger"
+	"github.com/MrMirhan/intellyrouter/internal/provider"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 // A director with high effort can think for a while before it answers.

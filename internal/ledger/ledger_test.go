@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"intellyrouter/internal/sse"
+	"github.com/MrMirhan/intellyrouter/internal/sse"
 )
 
 func TestBuiltinPriceSpellings(t *testing.T) {

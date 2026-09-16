@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"intellyrouter/internal/guided"
+	"github.com/MrMirhan/intellyrouter/internal/guided"
 )
 
 // writeInChunks splits the stream at arbitrary points, as the network does.

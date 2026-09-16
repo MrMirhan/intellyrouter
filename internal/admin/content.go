@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 type contentLegJSON struct {

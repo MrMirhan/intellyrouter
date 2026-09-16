@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"testing"
 
-	"intellyrouter/internal/sse"
+	"github.com/MrMirhan/intellyrouter/internal/sse"
 )
 
 func assertJSON(t *testing.T, got []byte, want string) {

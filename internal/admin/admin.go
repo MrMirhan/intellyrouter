@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"intellyrouter/internal/eval"
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/eval"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 const cookieName = "intelly_admin"

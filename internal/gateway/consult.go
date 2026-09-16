@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"intellyrouter/internal/jsonbytes"
+	"github.com/MrMirhan/intellyrouter/internal/jsonbytes"
 )
 
 // consultWriter relays executor event streams to the client and hides the

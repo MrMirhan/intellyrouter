@@ -7,12 +7,12 @@ import (
 	"net/http"
 	"strings"
 
-	"intellyrouter/internal/escalate"
-	"intellyrouter/internal/guided"
-	"intellyrouter/internal/jsonbytes"
-	"intellyrouter/internal/ledger"
-	"intellyrouter/internal/provider"
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/escalate"
+	"github.com/MrMirhan/intellyrouter/internal/guided"
+	"github.com/MrMirhan/intellyrouter/internal/jsonbytes"
+	"github.com/MrMirhan/intellyrouter/internal/ledger"
+	"github.com/MrMirhan/intellyrouter/internal/provider"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 // routeAdvisor is the advisor model a route chose. The gateway answers the

@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"intellyrouter/internal/ledger"
-	"intellyrouter/internal/provider"
-	"intellyrouter/internal/sse"
+	"github.com/MrMirhan/intellyrouter/internal/ledger"
+	"github.com/MrMirhan/intellyrouter/internal/provider"
+	"github.com/MrMirhan/intellyrouter/internal/sse"
 )
 
 func TestOpenAICompatibleStreamIsTranslated(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 type sessionModelJSON struct {

@@ -11,9 +11,9 @@ import (
 	"reflect"
 	"testing"
 
-	"intellyrouter/internal/admin"
-	"intellyrouter/internal/provider"
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/admin"
+	"github.com/MrMirhan/intellyrouter/internal/provider"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 func sameJSON(t *testing.T, a, b []byte) bool {

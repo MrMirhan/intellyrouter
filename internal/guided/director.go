@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"intellyrouter/internal/jsonbytes"
+	"github.com/MrMirhan/intellyrouter/internal/jsonbytes"
 )
 
 // directorSystem starts with a phrase the tests use to recognize director calls.

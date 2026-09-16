@@ -14,10 +14,10 @@ import (
 	"sync"
 	"testing"
 
-	"intellyrouter/internal/gateway"
-	"intellyrouter/internal/ledger"
-	"intellyrouter/internal/provider"
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/gateway"
+	"github.com/MrMirhan/intellyrouter/internal/ledger"
+	"github.com/MrMirhan/intellyrouter/internal/provider"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 // A subscription director asked through Claude Code gives the API executor

@@ -9,8 +9,8 @@ import (
 	"sync"
 	"testing"
 
-	"intellyrouter/internal/provider"
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/provider"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 func TestRejectedFeaturesAreRemovedAndRemembered(t *testing.T) {

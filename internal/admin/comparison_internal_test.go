@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 func TestNewComparison(t *testing.T) {

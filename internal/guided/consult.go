@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"intellyrouter/internal/jsonbytes"
+	"github.com/MrMirhan/intellyrouter/internal/jsonbytes"
 )
 
 // Roles of the model that answers the executor's hidden questions.

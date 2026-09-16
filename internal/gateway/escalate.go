@@ -8,12 +8,12 @@ import (
 	"net/http"
 	"time"
 
-	"intellyrouter/internal/escalate"
-	"intellyrouter/internal/guided"
-	"intellyrouter/internal/ledger"
-	"intellyrouter/internal/provider"
-	"intellyrouter/internal/store"
-	"intellyrouter/internal/translate"
+	"github.com/MrMirhan/intellyrouter/internal/escalate"
+	"github.com/MrMirhan/intellyrouter/internal/guided"
+	"github.com/MrMirhan/intellyrouter/internal/ledger"
+	"github.com/MrMirhan/intellyrouter/internal/provider"
+	"github.com/MrMirhan/intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/translate"
 )
 
 const classifyTimeout = 20 * time.Second

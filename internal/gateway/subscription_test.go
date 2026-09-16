@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"intellyrouter/internal/ledger"
-	"intellyrouter/internal/provider"
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/ledger"
+	"github.com/MrMirhan/intellyrouter/internal/provider"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 const claudeLogin = "Bearer sk-ant-oat01-client-login"

@@ -16,13 +16,13 @@ import (
 	"syscall"
 	"time"
 
-	"intellyrouter/internal/admin"
-	"intellyrouter/internal/dashboard"
-	"intellyrouter/internal/eval"
-	"intellyrouter/internal/gateway"
-	"intellyrouter/internal/ledger"
-	"intellyrouter/internal/store"
-	"intellyrouter/web"
+	"github.com/MrMirhan/intellyrouter/internal/admin"
+	"github.com/MrMirhan/intellyrouter/internal/dashboard"
+	"github.com/MrMirhan/intellyrouter/internal/eval"
+	"github.com/MrMirhan/intellyrouter/internal/gateway"
+	"github.com/MrMirhan/intellyrouter/internal/ledger"
+	"github.com/MrMirhan/intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/web"
 )
 
 func main() {

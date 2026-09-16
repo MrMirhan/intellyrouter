@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"intellyrouter/internal/provider"
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/provider"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 func TestDropAdvisorTools(t *testing.T) {

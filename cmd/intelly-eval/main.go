@@ -17,7 +17,7 @@ import (
 	"syscall"
 	"time"
 
-	"intellyrouter/internal/eval"
+	"github.com/MrMirhan/intellyrouter/internal/eval"
 )
 
 func main() {

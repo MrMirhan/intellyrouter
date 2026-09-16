@@ -3,9 +3,9 @@ package eval
 import (
 	"context"
 
-	"intellyrouter/internal/guided"
-	"intellyrouter/internal/provider"
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/guided"
+	"github.com/MrMirhan/intellyrouter/internal/provider"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 // routeNeedsLogin reports whether a route sends requests to a Claude

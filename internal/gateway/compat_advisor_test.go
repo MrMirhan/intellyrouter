@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"intellyrouter/internal/provider"
+	"github.com/MrMirhan/intellyrouter/internal/provider"
 )
 
 // A route can send the same advisor to models that accept it and to a model

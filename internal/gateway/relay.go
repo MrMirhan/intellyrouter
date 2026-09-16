@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"intellyrouter/internal/ledger"
-	"intellyrouter/internal/provider"
-	"intellyrouter/internal/sse"
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/ledger"
+	"github.com/MrMirhan/intellyrouter/internal/provider"
+	"github.com/MrMirhan/intellyrouter/internal/sse"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 const maxResponseBytes = 64 << 20

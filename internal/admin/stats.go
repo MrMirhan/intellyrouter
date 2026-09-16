@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"time"
 
-	"intellyrouter/internal/ledger"
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/ledger"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 type statsRange struct {

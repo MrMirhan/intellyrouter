@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"intellyrouter/internal/admin"
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/admin"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 func get(t *testing.T, url, token string) (*http.Response, []byte) {

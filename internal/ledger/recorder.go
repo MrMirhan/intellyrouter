@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 // Leg is one upstream call made while serving a client request.

@@ -7,8 +7,8 @@ import (
 	"sync"
 	"testing"
 
-	"intellyrouter/internal/ledger"
-	"intellyrouter/internal/provider"
+	"github.com/MrMirhan/intellyrouter/internal/ledger"
+	"github.com/MrMirhan/intellyrouter/internal/provider"
 )
 
 const advisorStream = `event: message_start

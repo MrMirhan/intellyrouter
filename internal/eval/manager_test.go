@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 func newManager(t *testing.T, claudeScript string) (*Manager, *store.Store) {

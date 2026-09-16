@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 
-	"intellyrouter/internal/jsonbytes"
-	"intellyrouter/internal/provider"
+	"github.com/MrMirhan/intellyrouter/internal/jsonbytes"
+	"github.com/MrMirhan/intellyrouter/internal/provider"
 )
 
 // dropAdvisorTools removes the advisor server tool when the provider is not

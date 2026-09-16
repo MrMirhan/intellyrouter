@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 // visionTiers builds a route whose middle tier is the only one that takes

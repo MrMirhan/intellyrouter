@@ -9,10 +9,10 @@ import (
 	"net/http"
 	"time"
 
-	"intellyrouter/internal/jsonbytes"
-	"intellyrouter/internal/ledger"
-	"intellyrouter/internal/provider"
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/jsonbytes"
+	"github.com/MrMirhan/intellyrouter/internal/ledger"
+	"github.com/MrMirhan/intellyrouter/internal/provider"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 const maxBodyBytes = 64 << 20

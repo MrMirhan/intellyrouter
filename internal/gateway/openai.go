@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"intellyrouter/internal/ledger"
-	"intellyrouter/internal/provider"
-	"intellyrouter/internal/sse"
-	"intellyrouter/internal/translate"
+	"github.com/MrMirhan/intellyrouter/internal/ledger"
+	"github.com/MrMirhan/intellyrouter/internal/provider"
+	"github.com/MrMirhan/intellyrouter/internal/sse"
+	"github.com/MrMirhan/intellyrouter/internal/translate"
 )
 
 // Claude Code aborts a stream after 300 seconds without bytes.

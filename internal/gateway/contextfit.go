@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"intellyrouter/internal/ledger"
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/ledger"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 // defaultTokensPerByte estimates a session's first request. JSON with code

@@ -1,4 +1,4 @@
-module intellyrouter
+module github.com/MrMirhan/intellyrouter
 
 go 1.27.1
 

@@ -10,9 +10,9 @@ import (
 	"sync"
 	"testing"
 
-	"intellyrouter/internal/provider"
-	"intellyrouter/internal/sse"
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/provider"
+	"github.com/MrMirhan/intellyrouter/internal/sse"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 const geminiToolStream = `data: {"id":"c1","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_sig","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"a.go\"}"},"extra_content":{"google":{"thought_signature":"sig-live"}}}]}}]}

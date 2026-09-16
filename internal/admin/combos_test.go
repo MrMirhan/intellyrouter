@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"intellyrouter/internal/admin"
-	"intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/admin"
+	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
 func TestCombosAndProviderSlugs(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"intellyrouter/internal/jsonbytes"
+	"github.com/MrMirhan/intellyrouter/internal/jsonbytes"
 )
 
 // AnthropicTracker collects usage, stop reason, and errors from an Anthropic
