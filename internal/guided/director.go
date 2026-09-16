@@ -163,7 +163,19 @@ func ParseGuidance(message []byte) (guidance string, approved bool, err error) {
 const (
 	guidanceOpen  = "<director-guidance"
 	guidanceClose = "</director-guidance>"
+	adviceOpen    = "<advisor-answer"
+	adviceClose   = "</advisor-answer>"
 )
+
+// injectedBlocks are the wrappers the gateway adds to an executor's request.
+// The executor must act on them and never repeat them: a copy reaches the
+// user, and it stays in the client's history, where it teaches the executor to
+// repeat the block on every later request. Add a wrapper here when you add one
+// to a request, or its copies stay in the conversation for good.
+var injectedBlocks = [][2]string{
+	{guidanceOpen, guidanceClose},
+	{adviceOpen, adviceClose},
+}
 
 // InjectGuidance appends the director's guidance to the last user message of
 // an Anthropic Messages body. Earlier messages stay byte-identical, so the
@@ -176,14 +188,14 @@ func InjectGuidance(body []byte, guidance, reason string) ([]byte, error) {
 	return appendUserText(body, text)
 }
 
-// StripEchoedGuidance removes guidance blocks that the executor copied into
-// its own reply. A weak executor sometimes repeats the block instead of acting
+// StripEchoedBlocks removes the injected blocks that the executor copied into
+// its own reply. A weak executor sometimes repeats a block instead of acting
 // on it, and the copy stays in the client's history: from then on the executor
 // reads its own replies as a house style, repeats the block again, and the
 // turn stops making progress. The second return value reports whether the body
 // changed, so a clean request keeps its bytes and its prompt cache.
-func StripEchoedGuidance(body []byte) ([]byte, bool, error) {
-	if !bytes.Contains(body, []byte(guidanceOpen)) {
+func StripEchoedBlocks(body []byte) ([]byte, bool, error) {
+	if !hasInjectedBlock(body) {
 		return body, false, nil
 	}
 	spans, err := jsonbytes.TopLevel(body)
@@ -204,10 +216,10 @@ func StripEchoedGuidance(body []byte) ([]byte, bool, error) {
 		if json.Unmarshal(raw, &m) != nil || m.Role != "assistant" {
 			continue
 		}
-		if !bytes.Contains(raw, []byte(guidanceOpen)) {
+		if !hasInjectedBlock(raw) {
 			continue
 		}
-		cleaned, ok := cutMessageGuidance(m)
+		cleaned, ok := cutMessageBlocks(m)
 		if !ok {
 			continue
 		}
@@ -228,12 +240,12 @@ func StripEchoedGuidance(body []byte) ([]byte, bool, error) {
 	return out, true, nil
 }
 
-// cutMessageGuidance rewrites one assistant message without its guidance
+// cutMessageBlocks rewrites one assistant message without its injected
 // blocks. It reports false when nothing in the message changed.
-func cutMessageGuidance(m rawMessage) (json.RawMessage, bool) {
+func cutMessageBlocks(m rawMessage) (json.RawMessage, bool) {
 	var s string
 	if json.Unmarshal(m.Content, &s) == nil {
-		cut := cutGuidance(s)
+		cut := cutBlocks(s)
 		if cut == s {
 			return nil, false
 		}
@@ -255,7 +267,7 @@ func cutMessageGuidance(m rawMessage) (json.RawMessage, bool) {
 			kept = append(kept, raw)
 			continue
 		}
-		cut := cutGuidance(b.Text)
+		cut := cutBlocks(b.Text)
 		if cut == b.Text {
 			kept = append(kept, raw)
 			continue
@@ -288,20 +300,36 @@ func cutMessageGuidance(m rawMessage) (json.RawMessage, bool) {
 	return out, err == nil
 }
 
-// cutGuidance removes every guidance block from s. A block that lost its
-// closing marker on the way through the model runs to the end of the text.
-func cutGuidance(s string) string {
+// hasInjectedBlock reports whether b mentions the opening marker of any block
+// the gateway injects.
+func hasInjectedBlock(b []byte) bool {
+	for _, mark := range injectedBlocks {
+		if bytes.Contains(b, []byte(mark[0])) {
+			return true
+		}
+	}
+	return false
+}
+
+// cutBlocks removes every injected block from s. A block that lost its closing
+// marker on the way through the model runs to the end of the text.
+func cutBlocks(s string) string {
 	for {
-		i := strings.Index(s, guidanceOpen)
-		if i < 0 {
+		at, mark := -1, [2]string{}
+		for _, m := range injectedBlocks {
+			if i := strings.Index(s, m[0]); i >= 0 && (at < 0 || i < at) {
+				at, mark = i, m
+			}
+		}
+		if at < 0 {
 			return s
 		}
-		rest := s[i+len(guidanceOpen):]
-		j := strings.Index(rest, guidanceClose)
+		rest := s[at+len(mark[0]):]
+		j := strings.Index(rest, mark[1])
 		if j < 0 {
-			return strings.TrimRight(s[:i], " \t\n")
+			return strings.TrimRight(s[:at], " \t\n")
 		}
-		s = s[:i] + rest[j+len(guidanceClose):]
+		s = s[:at] + rest[j+len(mark[1]):]
 	}
 }
 

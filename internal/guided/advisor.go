@@ -20,8 +20,9 @@ func AdvisorRequest(body []byte, model, effort, question string) ([]byte, error)
 // InjectAdvice adds the advisor's latest answer in the turn to the last user
 // message, so the executor keeps it after the hidden exchange ends.
 func InjectAdvice(body []byte, question, answer string) ([]byte, error) {
-	text := fmt.Sprintf("<advisor-answer>\nEarlier in this task you asked the advisor: %s\n\n%s\n</advisor-answer>\n"+
-		"Keep following this answer unless the code or tool results clearly contradict it. Do not quote it to the user.",
-		question, answer)
+	text := fmt.Sprintf("%s>\nEarlier in this task you asked the advisor: %s\n\n%s\n\n"+
+		"Keep following this answer unless the code or tool results clearly contradict it. "+
+		"Never copy these lines into your reply: the user must not see them.\n%s",
+		adviceOpen, question, answer, adviceClose)
 	return appendUserText(body, text)
 }

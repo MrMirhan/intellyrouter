@@ -278,16 +278,16 @@ func TestInjectGuidance(t *testing.T) {
 
 }
 
-func TestStripEchoedGuidance(t *testing.T) {
+func TestStripEchoedBlocks(t *testing.T) {
 	// An executor that copies the block into its reply leaves it in the
 	// history, where it teaches the executor to copy it again.
 	echoed := `{"messages":[` +
 		`{"role":"user","content":"fix the bug"},` +
 		`{"role":"assistant","content":[{"type":"text","text":"<director-guidance checkpoint=\"turn start\">\n1. Read the file.\n</director-guidance>\nHere is the fix."}]},` +
 		`{"role":"user","content":"go on"}]}`
-	out, cut, err := StripEchoedGuidance([]byte(echoed))
+	out, cut, err := StripEchoedBlocks([]byte(echoed))
 	if err != nil || !cut {
-		t.Fatalf("StripEchoedGuidance = %v, %v", cut, err)
+		t.Fatalf("StripEchoedBlocks = %v, %v", cut, err)
 	}
 	if strings.Contains(string(out), "director-guidance") || !strings.Contains(string(out), "Here is the fix.") {
 		t.Fatalf("block still there: %s", out)
@@ -295,21 +295,28 @@ func TestStripEchoedGuidance(t *testing.T) {
 
 	// A copy that lost its closing marker runs to the end of the block.
 	truncated := `{"messages":[{"role":"assistant","content":[{"type":"text","text":"Done.\n<director-guidance checkpoint=\"repeated action\">\nA senior director reviewed"}]}]}`
-	out, cut, err = StripEchoedGuidance([]byte(truncated))
+	out, cut, err = StripEchoedBlocks([]byte(truncated))
 	if err != nil || !cut || strings.Contains(string(out), "director-guidance") || !strings.Contains(string(out), "Done.") {
 		t.Fatalf("truncated block: %s, %v, %v", out, cut, err)
 	}
 
+	// Every wrapper the gateway injects is cut, not only the director's.
+	advice := `{"messages":[{"role":"assistant","content":[{"type":"text","text":"<advisor-answer>\nuse a mutex\n</advisor-answer>\nPatch below."}]}]}`
+	out, cut, err = StripEchoedBlocks([]byte(advice))
+	if err != nil || !cut || strings.Contains(string(out), "advisor-answer") || !strings.Contains(string(out), "Patch below.") {
+		t.Fatalf("advisor block: %s, %v, %v", out, cut, err)
+	}
+
 	// The user's own turn keeps the text: only the executor's copy is a problem.
 	user := `{"messages":[{"role":"user","content":"why does <director-guidance leak?"}]}`
-	out, cut, err = StripEchoedGuidance([]byte(user))
+	out, cut, err = StripEchoedBlocks([]byte(user))
 	if err != nil || cut || string(out) != user {
 		t.Fatalf("user message changed: %s, %v, %v", out, cut, err)
 	}
 
 	// A clean body keeps its bytes, so the prompt cache still covers it.
 	clean := `{"messages":[{"role":"assistant","content":"all good"}]}`
-	out, cut, err = StripEchoedGuidance([]byte(clean))
+	out, cut, err = StripEchoedBlocks([]byte(clean))
 	if err != nil || cut || string(out) != clean {
 		t.Fatalf("clean body changed: %s, %v, %v", out, cut, err)
 	}

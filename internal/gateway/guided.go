@@ -108,9 +108,9 @@ func (s *Server) guided(w http.ResponseWriter, r *http.Request, route store.Rout
 	if fitNote != "" {
 		note += "; " + fitNote
 	}
-	if stripped, cut, err := guided.StripEchoedGuidance(body); err == nil && cut {
+	if stripped, cut, err := guided.StripEchoedBlocks(body); err == nil && cut {
 		body = stripped
-		note += "; dropped guidance the executor had echoed"
+		note += "; dropped blocks the executor had echoed"
 	}
 	switch {
 	case st.Guidance == "":
