@@ -45,7 +45,7 @@ func TestEvalEndpoints(t *testing.T) {
 
 	log := slog.New(slog.DiscardHandler)
 	mux := http.NewServeMux()
-	admin.New(st, http.DefaultClient, log, eval.NewManager(st, tasks, "http://127.0.0.1:1", claude, log)).Register(mux)
+	admin.New(st, http.DefaultClient, log, eval.NewManager(st, tasks, "http://127.0.0.1:1", claude, log), claude).Register(mux)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 	c := client{t: t, base: srv.URL, token: token}

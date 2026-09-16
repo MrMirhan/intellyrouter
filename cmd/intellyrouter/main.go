@@ -90,7 +90,7 @@ func run() error {
 	gw := gateway.New(st, ledger.NewRecorder(st, log), client, log)
 	gw.UseClaudeCode(*claude, filepath.Join(*dataDir, "claude-director"))
 	gw.Register(mux)
-	admin.New(st, client, log, evals).Register(mux)
+	admin.New(st, client, log, evals, *claude).Register(mux)
 	mux.HandleFunc("GET /api/", notFound)
 	mux.HandleFunc("GET /v1/", notFound)
 	mux.Handle("GET /", dashboard.Handler(web.Assets()))

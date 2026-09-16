@@ -25,7 +25,7 @@ func TestCombosAndProviderSlugs(t *testing.T) {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	admin.New(st, http.DefaultClient, slog.New(slog.DiscardHandler), nil).Register(mux)
+	admin.New(st, http.DefaultClient, slog.New(slog.DiscardHandler), nil, "claude").Register(mux)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 	c := client{t: t, base: srv.URL, token: token}

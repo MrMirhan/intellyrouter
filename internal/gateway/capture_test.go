@@ -50,7 +50,7 @@ func TestCaptureContentOfStreamedDirectRequest(t *testing.T) {
 	token, err := e.store.EnsureAdminToken(t.Context(), false)
 	must(t, err)
 	mux := http.NewServeMux()
-	admin.New(e.store, http.DefaultClient, slog.New(slog.DiscardHandler), nil).Register(mux)
+	admin.New(e.store, http.DefaultClient, slog.New(slog.DiscardHandler), nil, "claude").Register(mux)
 	adminSrv := httptest.NewServer(mux)
 	t.Cleanup(adminSrv.Close)
 

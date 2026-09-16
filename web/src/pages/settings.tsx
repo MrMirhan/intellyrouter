@@ -26,7 +26,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
-import { useModels, useRoutes, useSettings, useUpdateSettings } from "@/lib/queries"
+import { useModels, useRoutes, useSettings, useSystemStatus, useUpdateSettings } from "@/lib/queries"
 
 const defaultReferenceModel = "claude-fable-5-1"
 // Route names cannot contain whitespace, so this value never matches a route.
@@ -271,6 +271,7 @@ function ContentCaptureCard({
 
 export function SettingsPage() {
   const settings = useSettings()
+  const system = useSystemStatus()
 
   return (
     <>
@@ -285,6 +286,7 @@ export function SettingsPage() {
         </>
       ) : (
         <>
+          <ClaudeCodeCard system={system} />
           <ReferenceModelCard current={settings.data.reference_model} />
           <FallbackRouteCard current={settings.data.fallback_route} />
           <ContentCaptureCard
@@ -294,5 +296,63 @@ export function SettingsPage() {
         </>
       )}
     </>
+  )
+}
+
+const authLabel: Record<string, string> = {
+  claudeai_login: "Logged in (subscription / console)",
+  oauth_token: "CLAUDE_CODE_OAUTH_TOKEN set",
+  api_key: "ANTHROPIC_API_KEY set",
+  none: "Not authenticated",
+  unknown: "Status unavailable",
+}
+
+function ClaudeCodeCard({ system }: { system: ReturnType<typeof useSystemStatus> }) {
+  if (system.isPending) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Claude Code</CardTitle>
+          <CardDescription>Binaries and login state of the gateway's `claude`.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-6 w-48" />
+        </CardContent>
+      </Card>
+    )
+  }
+  const data = system.data
+  const version = data?.claude_version || (data?.claude_binary_found ? "" : "not found")
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Claude Code</CardTitle>
+        <CardDescription>
+          Login state and version of the `claude` binary in this container.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2 text-sm">
+        <Row label="Binary" value={data?.claude_binary || "—"} />
+        <Row label="Found on PATH" value={data?.claude_binary_found ? "yes" : "no"} />
+        <Row label="Version" value={version || "—"} />
+        <Row label="Login" value={authLabel[data?.auth_method ?? "unknown"] ?? data?.auth_method ?? "—"} />
+        {data?.auth_account ? <Row label="Account" value={data.auth_account} /> : null}
+        {data?.auth_org ? <Row label="Organization" value={`${data.auth_org}${data.auth_org_id ? ` (${data.auth_org_id})` : ""}`} /> : null}
+        {data?.auth_subscription ? <Row label="Subscription" value={data.auth_subscription} /> : null}
+        {data?.config_directory ? <Row label="Config directory" value={data.config_directory} /> : null}
+        {data?.notes ? (
+          <p className="text-muted-foreground pt-2 text-xs">{data.notes}</p>
+        ) : null}
+      </CardContent>
+    </Card>
+  )
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-4">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-mono text-xs">{value}</span>
+    </div>
   )
 }

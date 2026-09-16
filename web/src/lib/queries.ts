@@ -41,6 +41,7 @@ export const queryKeys = {
   stats: (range: StatsRange) => ["stats", range],
   subscriptionLimits: ["subscription-limits"],
   settings: ["settings"],
+  system: ["system"],
   evals: ["eval"],
   evalTasks: ["eval", "tasks"],
   evalRuns: ["eval", "runs"],
@@ -292,6 +293,10 @@ export function useSubscriptionLimits() {
 
 export function useSettings() {
   return useQuery({ queryKey: queryKeys.settings, queryFn: api.getSettings })
+}
+
+export function useSystemStatus() {
+  return useQuery({ queryKey: queryKeys.system, queryFn: api.getSystemStatus, refetchInterval: 30_000 })
 }
 
 export function useUpdateSettings() {

@@ -142,6 +142,21 @@ export const api = {
   getSettings: () => call<Settings>("GET", "/settings"),
   updateSettings: (input: Partial<Settings>) => call<Settings>("PUT", "/settings", input),
 
+  getSystemStatus: () =>
+    call<{
+      claude_binary: string
+      claude_binary_found: boolean
+      claude_version: string
+      auth_method: string
+      auth_account: string
+      auth_org: string
+      auth_org_id: string
+      auth_subscription: string
+      auth_expires_at: string
+      config_directory: string
+      notes: string
+    }>("GET", "/system/status"),
+
   listEvalTasks: () => call<EvalTaskList>("GET", "/eval/tasks"),
   listEvalRuns: () => call<EvalRun[]>("GET", "/eval/runs"),
   createEvalRun: (input: EvalRunInput) => call<EvalRun>("POST", "/eval/runs", input),

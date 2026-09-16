@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -21,11 +22,15 @@ type API struct {
 	client *http.Client
 	log    *slog.Logger
 	eval   *eval.Manager
+	claude string // binary used for eval runs and Claude-Code directors; "" disables the probe
+	envs   []string
 }
 
 // New creates the admin API. A nil eval manager leaves the eval endpoints out.
-func New(st *store.Store, client *http.Client, log *slog.Logger, ev *eval.Manager) *API {
-	return &API{store: st, client: client, log: log, eval: ev}
+// `claude` is the binary the gateway uses for eval runs and Claude-Code
+// directors; the system-status probe invokes it read-only. Pass "" to disable.
+func New(st *store.Store, client *http.Client, log *slog.Logger, ev *eval.Manager, claude string) *API {
+	return &API{store: st, client: client, log: log, eval: ev, claude: claude, envs: os.Environ()}
 }
 
 type endpoint struct {
@@ -74,6 +79,8 @@ func (a *API) Register(mux *http.ServeMux) {
 
 		{"GET /api/admin/stats", a.getStats},
 		{"GET /api/admin/subscription/limits", a.getSubscriptionLimits},
+
+		{"GET /api/admin/system/status", a.getSystemStatus},
 
 		{"GET /api/admin/settings", a.getSettings},
 		{"PUT /api/admin/settings", a.putSettings},
