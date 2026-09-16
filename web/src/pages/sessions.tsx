@@ -40,7 +40,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { formatCount, formatDuration, formatTokens, formatUsd } from "@/lib/format"
+import { formatCount, formatDuration, formatUsd } from "@/lib/format"
 import { useRoutes, useSessions } from "@/lib/queries"
 import type { SessionSummary } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -192,14 +192,13 @@ export function SessionsPage() {
                 <TableHead className="text-right">API cost</TableHead>
                 <TableHead className="text-right">Sub value</TableHead>
                 <TableHead className="text-right">Saved</TableHead>
-                <TableHead className="text-right">Tokens</TableHead>
                 <TableHead className="text-right">Errors</TableHead>
                 <TableHead>Captured</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {sessions.isPending ? (
-                <TableSkeleton columns={13} rows={10} />
+                <TableSkeleton columns={12} rows={10} />
               ) : (
                 items.map((item) => (
                   <TableRow key={item.session_id}>
@@ -245,15 +244,6 @@ export function SessionsPage() {
                       title={item.saved_against ? `vs ${item.saved_against}` : undefined}
                     >
                       {item.saved_against ? formatUsd(item.saved_usd) : "—"}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums whitespace-nowrap">
-                      {formatTokens(item.input_tokens)}
-                      {" / "}
-                      {formatTokens(item.output_tokens)}
-                      {" / "}
-                      <span title={`cache read ${formatTokens(item.cache_read_tokens)} · write ${formatTokens(item.cache_write_tokens)}`}>
-                        {formatTokens(item.cache_read_tokens + item.cache_write_tokens)}
-                      </span>
                     </TableCell>
                     <TableCell
                       className={cn("text-right tabular-nums", item.errors > 0 && "text-destructive")}
