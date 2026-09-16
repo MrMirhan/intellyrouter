@@ -127,7 +127,7 @@ GROUP BY l.role, l.model, l.billing ORDER BY COUNT(*) DESC, l.model, l.role`,
 	}
 	err = s.each(ctx, `
 SELECT r.id, r.ts, l.role, l.model, l.billing, l.status, l.note, l.latency_ms
-FROM legs l JOIN requests r ON r.id = l.request_id WHERE r.session_id = ? AND l.role IN ('director', 'advisor')
+FROM legs l JOIN requests r ON r.id = l.request_id WHERE r.session_id = ? AND l.role IN ('director', 'director_step', 'advisor')
 ORDER BY r.ts, r.id, l.seq`,
 		[]any{id}, func(rows *sql.Rows) error {
 			var c Checkpoint
@@ -205,7 +205,7 @@ GROUP BY r.session_id ORDER BY MAX(r.ts) DESC, r.session_id LIMIT ? OFFSET ?`,
 	in := placeholders(len(ids))
 	err = s.each(ctx, `
 SELECT r.session_id, l.model, l.billing, COUNT(*), SUM(l.input_tokens), SUM(l.output_tokens), SUM(l.cache_read_tokens),
-  SUM(l.cache_write_tokens), SUM(l.role = 'director'), SUM(l.role = 'advisor')
+  SUM(l.cache_write_tokens), SUM(l.role IN ('director', 'director_step')), SUM(l.role = 'advisor')
 FROM legs l JOIN requests r ON r.id = l.request_id WHERE r.session_id IN (`+in+`)
 GROUP BY r.session_id, l.model, l.billing ORDER BY COUNT(*) DESC, l.model`,
 		ids, func(rows *sql.Rows) error {
@@ -267,7 +267,7 @@ func (s *Store) directorModelsBySession(ctx context.Context, ids []any) (map[str
 	err := s.each(ctx, `
 SELECT r.session_id, l.model
 FROM legs l JOIN requests r ON r.id = l.request_id
-WHERE r.session_id IN (`+in+`) AND l.role = 'director'
+WHERE r.session_id IN (`+in+`) AND l.role IN ('director', 'director_step')
 GROUP BY r.session_id, l.model
 ORDER BY r.session_id, COUNT(*) DESC`,
 		ids, func(rows *sql.Rows) error {

@@ -235,8 +235,8 @@ export function SessionDetailPage() {
   }
 
   const { summary, by_model: byModel, checkpoints, comparison, requests } = session.data
-  const roleCost = (role: string) =>
-    byModel.filter((row) => row.role === role).reduce((sum, row) => sum + row.cost_usd, 0)
+  const roleCost = (...roles: string[]) =>
+    byModel.filter((row) => roles.includes(row.role)).reduce((sum, row) => sum + row.cost_usd, 0)
 
   return (
     <>
@@ -280,7 +280,7 @@ export function SessionDetailPage() {
           <p>Valued at API prices. It costs nothing extra but counts toward your limits.</p>
         </Kpi>
         <Kpi title="Director calls" value={formatCount(summary.director_calls)}>
-          <p>Director cost {formatUsd(roleCost("director"))}</p>
+          <p>Director cost {formatUsd(roleCost("director", "director_step"))}</p>
         </Kpi>
         <Kpi title="Advisor calls" value={formatCount(summary.advisor_calls)}>
           <p>Advisor cost {formatUsd(roleCost("advisor"))}</p>
@@ -290,7 +290,7 @@ export function SessionDetailPage() {
       <ComparisonCard
         comparison={comparison}
         description="What the work in this session would cost on one model at API prices."
-        baseline={byModel.find((row) => row.role === "director")?.model}
+        baseline={byModel.find((row) => row.role === "director" || row.role === "director_step")?.model}
       />
 
       <WorkTable rows={byModel} />

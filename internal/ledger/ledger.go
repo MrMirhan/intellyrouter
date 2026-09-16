@@ -13,7 +13,12 @@ const (
 	RoleExecutor   = "executor"
 	RoleEscalation = "escalation"
 	RoleClassifier = "classifier"
-	RoleDirector   = "director"
+	// RoleDirector is a consult: the director reads the session and writes
+	// guidance. It never answers the client, so its tokens are routing overhead.
+	RoleDirector = "director"
+	// RoleDirectorStep is the director answering the client itself, which makes
+	// its tokens the work of that request.
+	RoleDirectorStep = "director_step"
 	// RoleAdvisor is an advisor model call that Anthropic ran inside another call.
 	RoleAdvisor = "advisor"
 )

@@ -66,7 +66,7 @@ func (s *Server) guided(w http.ResponseWriter, r *http.Request, route store.Rout
 		}
 		s.guidedTurns.Put(key, st)
 		leg := s.call(w, r, director, cr)
-		leg.Role = ledger.RoleDirector
+		leg.Role = ledger.RoleDirectorStep
 		leg.Note = joinNote("director step: "+checkpoint, leg.Note)
 		e.Legs = append(e.Legs, leg)
 		e.Finish(leg.Status, leg.HTTPStatus, leg.Error)

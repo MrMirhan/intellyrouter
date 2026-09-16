@@ -79,8 +79,8 @@ const (
 	// API tokens exclude classifier and director calls, which are routing overhead, not work.
 	apiTokens          = `COALESCE(SUM(CASE WHEN l.billing = 'api' AND l.role NOT IN ('classifier', 'director', 'advisor') THEN ` + legTokens + ` END), 0)`
 	subscriptionTokens = `COALESCE(SUM(CASE WHEN l.billing = 'subscription' THEN ` + legTokens + ` END), 0)`
-	// A subscription director leg is a Claude Code step; an API director leg is a consult the gateway made.
-	workLeg = `l.role NOT IN ('classifier', 'advisor') AND NOT (l.role = 'director' AND l.billing = 'api')`
+	// Consults never answer the client. A director step does, so it stays work.
+	workLeg = `l.role NOT IN ('classifier', 'advisor', 'director')`
 )
 
 // Stats aggregates requests with ts >= since (Unix ms) into buckets of bucketMS.

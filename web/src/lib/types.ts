@@ -160,7 +160,14 @@ export interface CreatedGatewayKey extends GatewayKey {
 
 export type RequestStatus = "ok" | "upstream_error" | "error" | "canceled"
 
-export type LegRole = "direct" | "executor" | "escalation" | "classifier" | "director" | "advisor"
+export type LegRole =
+  | "direct"
+  | "executor"
+  | "escalation"
+  | "classifier"
+  | "director"
+  | "director_step"
+  | "advisor"
 
 export type Billing = "api" | "subscription"
 

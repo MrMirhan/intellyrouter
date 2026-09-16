@@ -28,7 +28,7 @@ func TestSessions(t *testing.T) {
 		},
 		{
 			TS: 3000, SessionID: "s1", Route: "guided", Strategy: StrategyGuided, Status: "canceled", SubscriptionValueUSD: 0.2,
-			Legs: []Leg{{Role: "director", Provider: "c", Model: "opus", Billing: "subscription", InputTokens: 500, OutputTokens: 20, CostUSD: 0.2, LatencyMS: 400, Status: "canceled", Note: "director step: review"}},
+			Legs: []Leg{{Role: "director_step", Provider: "c", Model: "opus", Billing: "subscription", InputTokens: 500, OutputTokens: 20, CostUSD: 0.2, LatencyMS: 400, Status: "canceled", Note: "director step: review"}},
 		},
 		{
 			TS: 4000, SessionID: "s2", Route: "direct", Strategy: StrategyDirect, Status: "ok", CostUSD: 0.004,
@@ -88,7 +88,7 @@ func TestSessions(t *testing.T) {
 		sess.Checkpoints[2].Note != "director step: review" || sess.Checkpoints[2].LatencyMS != 400 {
 		t.Errorf("checkpoints = %+v", sess.Checkpoints)
 	}
-	// Work skips the classifier and the API director consult but keeps the subscription director step.
+	// Work skips the classifier and the director consults but keeps the director step.
 	wantWork := WorkTotals{APIUSD: 0.031, SubscriptionValueUSD: 0.7, InputTokens: 3500, OutputTokens: 270, CacheReadTokens: 400, CacheWriteTokens: 100}
 	if w := sess.Work; math.Abs(w.APIUSD-wantWork.APIUSD) > 1e-9 || math.Abs(w.SubscriptionValueUSD-wantWork.SubscriptionValueUSD) > 1e-9 ||
 		w.InputTokens != wantWork.InputTokens || w.OutputTokens != wantWork.OutputTokens || w.CacheReadTokens != wantWork.CacheReadTokens || w.CacheWriteTokens != wantWork.CacheWriteTokens {

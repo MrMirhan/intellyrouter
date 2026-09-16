@@ -194,7 +194,7 @@ func TestGuidedSubscriptionDirectorTakesTheStep(t *testing.T) {
 		t.Fatalf("upstream calls:\n got %+v\nwant %+v", got, want)
 	}
 	legs := requestLegs(t, e.store)
-	if legs[0][0].Role != ledger.RoleDirector || legs[0][0].Billing != ledger.BillingSubscription || !strings.Contains(legs[0][0].Note, "director step: turn start") {
+	if legs[0][0].Role != ledger.RoleDirectorStep || legs[0][0].Billing != ledger.BillingSubscription || !strings.Contains(legs[0][0].Note, "director step: turn start") {
 		t.Fatalf("director leg = %+v", legs[0][0])
 	}
 }
