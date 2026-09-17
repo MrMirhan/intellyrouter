@@ -1,7 +1,9 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -136,6 +138,23 @@ func (s *Server) complete(ctx context.Context, t target, body []byte) ([]byte, l
 	return message, usage, t, err
 }
 
+// firstJSONValue cuts a response body to the end of its first JSON value.
+// A reply to /v1/messages is one object, but a provider that answers a
+// non-streaming request as an event stream appends its terminator after it:
+// "data: [DONE]". The object before that is the whole answer, while the
+// bytes after it make the body unparseable.
+func firstJSONValue(raw []byte) []byte {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	var v json.RawMessage
+	if dec.Decode(&v) != nil {
+		return raw
+	}
+	if n := int(dec.InputOffset()); n > 0 && n < len(raw) {
+		return raw[:n]
+	}
+	return raw
+}
+
 func (s *Server) completeModel(ctx context.Context, t target, body []byte) ([]byte, ledger.Usage, error) {
 	openAI := t.config.Type.Format() == provider.FormatOpenAI
 	var req *http.Request
@@ -161,6 +180,7 @@ func (s *Server) completeModel(ctx context.Context, t target, body []byte) ([]by
 	if err != nil {
 		return nil, ledger.Usage{}, err
 	}
+	raw = firstJSONValue(raw)
 	if openAI {
 		if resp.StatusCode != http.StatusOK {
 			raw = translate.Error(resp.StatusCode, raw)
