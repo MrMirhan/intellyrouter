@@ -16,27 +16,44 @@ var comboNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 var comboStrategies = []string{store.ComboFallback, store.ComboRoundRobin, store.ComboLeastUsed}
 
+// maxComboWeight bounds a member's share. Weights are relative, so a wide
+// spread only makes the small members unreachable in practice.
+const maxComboWeight = 1000
+
+type comboMemberJSON struct {
+	ModelID int64 `json:"model_id"`
+	Weight  int   `json:"weight"`
+}
+
+// comboMemberInput is a member in a request. Weight is a pointer so that a
+// member sent without one takes the default, while an explicit 0 is refused
+// rather than quietly turned into a share the caller did not ask for.
+type comboMemberInput struct {
+	ModelID int64 `json:"model_id"`
+	Weight  *int  `json:"weight"`
+}
+
 type comboJSON struct {
-	ID       int64   `json:"id"`
-	Name     string  `json:"name"`
-	Strategy string  `json:"strategy"`
-	Enabled  bool    `json:"enabled"`
-	Members  []int64 `json:"members"`
+	ID       int64             `json:"id"`
+	Name     string            `json:"name"`
+	Strategy string            `json:"strategy"`
+	Enabled  bool              `json:"enabled"`
+	Members  []comboMemberJSON `json:"members"`
 }
 
 func toComboJSON(c store.Combo) comboJSON {
-	members := c.Members
-	if members == nil {
-		members = []int64{}
+	members := make([]comboMemberJSON, 0, len(c.Members))
+	for _, m := range c.Members {
+		members = append(members, comboMemberJSON{ModelID: m.ModelID, Weight: m.Weight})
 	}
 	return comboJSON{ID: c.ID, Name: c.Name, Strategy: c.Strategy, Enabled: c.Enabled, Members: members}
 }
 
 type comboInput struct {
-	Name     *string  `json:"name"`
-	Strategy *string  `json:"strategy"`
-	Enabled  *bool    `json:"enabled"`
-	Members  *[]int64 `json:"members"`
+	Name     *string             `json:"name"`
+	Strategy *string             `json:"strategy"`
+	Enabled  *bool               `json:"enabled"`
+	Members  *[]comboMemberInput `json:"members"`
 }
 
 func (in comboInput) apply(c *store.Combo) {
@@ -50,7 +67,15 @@ func (in comboInput) apply(c *store.Combo) {
 		c.Enabled = *in.Enabled
 	}
 	if in.Members != nil {
-		c.Members = *in.Members
+		c.Members = make([]store.ComboMember, 0, len(*in.Members))
+		for _, m := range *in.Members {
+			// A member sent without a weight gets an equal share.
+			weight := 1
+			if m.Weight != nil {
+				weight = *m.Weight
+			}
+			c.Members = append(c.Members, store.ComboMember{ModelID: m.ModelID, Weight: weight})
+		}
 	}
 }
 
@@ -63,13 +88,16 @@ func (a *API) validateCombo(ctx context.Context, c store.Combo) error {
 	case len(c.Members) == 0:
 		return errors.New("a combo needs at least one model")
 	}
-	for i, id := range c.Members {
-		if slices.Contains(c.Members[:i], id) {
+	for i, member := range c.Members {
+		if slices.ContainsFunc(c.Members[:i], func(o store.ComboMember) bool { return o.ModelID == member.ModelID }) {
 			return errors.New("a model can be in a combo only once")
 		}
-		m, err := a.store.GetModel(ctx, id)
+		if member.Weight < 1 || member.Weight > maxComboWeight {
+			return fmt.Errorf("weight must be between 1 and %d", maxComboWeight)
+		}
+		m, err := a.store.GetModel(ctx, member.ModelID)
 		if errors.Is(err, store.ErrNotFound) {
-			return fmt.Errorf("model %d does not exist", id)
+			return fmt.Errorf("model %d does not exist", member.ModelID)
 		}
 		if err != nil {
 			return err

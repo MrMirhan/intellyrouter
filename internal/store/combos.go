@@ -20,14 +20,24 @@ const (
 	ComboLeastUsed  = "least-used"
 )
 
+// ComboMember is one model in a combo and its share of the traffic.
+type ComboMember struct {
+	// ModelID is a model row.
+	ModelID int64
+	// Weight is the member's share, at least 1. Round-robin gives a member
+	// with weight 3 three turns for every one a weight-1 member gets, and
+	// least-used compares load per unit of weight. Fallback ignores it.
+	Weight int
+}
+
 type Combo struct {
 	// ID is the combo's model row.
 	ID       int64
 	Name     string
 	Strategy string
 	Enabled  bool
-	// Members are model row IDs in order.
-	Members []int64
+	// Members are the combo's models in order.
+	Members []ComboMember
 }
 
 // Slug turns a provider name into a slug: "Claude subscription" becomes
@@ -101,9 +111,11 @@ func (s *Store) UpdateCombo(ctx context.Context, c Combo) error {
 	})
 }
 
-func insertMembers(ctx context.Context, tx *sql.Tx, comboID int64, members []int64) error {
-	for i, id := range members {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO combo_members (combo_id, position, model_id) VALUES (?, ?, ?)`, comboID, i, id); err != nil {
+func insertMembers(ctx context.Context, tx *sql.Tx, comboID int64, members []ComboMember) error {
+	for i, m := range members {
+		weight := max(m.Weight, 1)
+		if _, err := tx.ExecContext(ctx, `INSERT INTO combo_members (combo_id, position, model_id, weight) VALUES (?, ?, ?, ?)`,
+			comboID, i, m.ModelID, weight); err != nil {
 			return mapErr(err)
 		}
 	}
@@ -155,12 +167,12 @@ func (s *Store) listCombos(ctx context.Context, where string, args ...any) ([]Co
 		return nil, err
 	}
 	for i := range combos {
-		err := s.each(ctx, `SELECT model_id FROM combo_members WHERE combo_id = ? ORDER BY position`, []any{combos[i].ID}, func(rows *sql.Rows) error {
-			var id int64
-			if err := rows.Scan(&id); err != nil {
+		err := s.each(ctx, `SELECT model_id, weight FROM combo_members WHERE combo_id = ? ORDER BY position`, []any{combos[i].ID}, func(rows *sql.Rows) error {
+			var m ComboMember
+			if err := rows.Scan(&m.ModelID, &m.Weight); err != nil {
 				return err
 			}
-			combos[i].Members = append(combos[i].Members, id)
+			combos[i].Members = append(combos[i].Members, m)
 			return nil
 		})
 		if err != nil {

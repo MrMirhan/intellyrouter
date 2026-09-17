@@ -34,20 +34,28 @@ export type ProviderUpdate = Partial<ProviderCreate>
 
 export type ComboStrategy = "fallback" | "round-robin" | "least-used"
 
+export interface ComboMember {
+  model_id: number
+  // Share of the traffic, at least 1. Round-robin gives a member with weight 3
+  // three turns for every one a weight-1 member gets, and least-used compares
+  // load per unit of weight. Fallback ignores it: its order is fixed.
+  weight: number
+}
+
 export interface Combo {
   id: number
   name: string
   strategy: ComboStrategy
   enabled: boolean
-  // Model row IDs in order.
-  members: number[]
+  // Models in order.
+  members: ComboMember[]
 }
 
 export interface ComboInput {
   name: string
   strategy: ComboStrategy
   enabled?: boolean
-  members: number[]
+  members: ComboMember[]
 }
 
 export interface Model {

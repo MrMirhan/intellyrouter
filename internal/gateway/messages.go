@@ -186,7 +186,7 @@ func (s *Server) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if t.combo != nil {
-		t = t.combo.members[0]
+		t = t.combo.members[0].target
 	}
 	if t.config.Type.Format() != provider.FormatAnthropic {
 		// Claude Code falls back to its own estimate when counting is unavailable.

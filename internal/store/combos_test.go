@@ -22,12 +22,14 @@ func TestCombos(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c, err := s.CreateCombo(ctx, Combo{Name: "stack", Strategy: ComboFallback, Enabled: true, Members: []int64{m27.ID, m3.ID}})
+	c, err := s.CreateCombo(ctx, Combo{Name: "stack", Strategy: ComboFallback, Enabled: true,
+		Members: []ComboMember{{ModelID: m27.ID, Weight: 3}, {ModelID: m3.ID, Weight: 1}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.GetCombo(ctx, c.ID)
-	if err != nil || got.Name != "stack" || got.Strategy != ComboFallback || !slices.Equal(got.Members, []int64{m27.ID, m3.ID}) {
+	if err != nil || got.Name != "stack" || got.Strategy != ComboFallback ||
+		!slices.Equal(got.Members, []ComboMember{{ModelID: m27.ID, Weight: 3}, {ModelID: m3.ID, Weight: 1}}) {
 		t.Fatalf("GetCombo = %+v, %v", got, err)
 	}
 	cp, err := s.ProviderBySlug(ctx, "combo")
@@ -40,7 +42,7 @@ func TestCombos(t *testing.T) {
 	if byPrefix, err := s.ProviderBySlug(ctx, "mm"); err != nil || byPrefix.ID != p.ID {
 		t.Fatalf("ProviderBySlug(mm) = %+v, %v", byPrefix, err)
 	}
-	if _, err := s.CreateCombo(ctx, Combo{Name: "stack", Strategy: ComboFallback, Members: []int64{m3.ID}}); !errors.Is(err, ErrConflict) {
+	if _, err := s.CreateCombo(ctx, Combo{Name: "stack", Strategy: ComboFallback, Members: []ComboMember{{ModelID: m3.ID, Weight: 1}}}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("duplicate combo name: %v", err)
 	}
 
@@ -58,11 +60,12 @@ func TestCombos(t *testing.T) {
 		t.Fatalf("ComboVision of a model that is not a combo = %v, %v", vision, err)
 	}
 
-	c.Name, c.Strategy, c.Members = "stack-2", ComboRoundRobin, []int64{m3.ID}
+	c.Name, c.Strategy, c.Members = "stack-2", ComboRoundRobin, []ComboMember{{ModelID: m3.ID, Weight: 7}}
 	if err := s.UpdateCombo(ctx, c); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := s.GetCombo(ctx, c.ID); got.Name != "stack-2" || got.Strategy != ComboRoundRobin || !slices.Equal(got.Members, []int64{m3.ID}) {
+	if got, _ := s.GetCombo(ctx, c.ID); got.Name != "stack-2" || got.Strategy != ComboRoundRobin ||
+		!slices.Equal(got.Members, []ComboMember{{ModelID: m3.ID, Weight: 7}}) {
 		t.Fatalf("updated combo = %+v", got)
 	}
 	if names, _ := s.CombosUsingModel(ctx, m3.ID); !slices.Equal(names, []string{"stack-2"}) {

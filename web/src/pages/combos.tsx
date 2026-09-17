@@ -46,7 +46,7 @@ import {
   useProviders,
   useUpdateCombo,
 } from "@/lib/queries"
-import type { Combo, ComboStrategy, Model, Provider } from "@/lib/types"
+import type { Combo, ComboMember, ComboStrategy, Model, Provider } from "@/lib/types"
 
 const strategies: { value: ComboStrategy; label: string; description: string }[] = [
   {
@@ -57,15 +57,20 @@ const strategies: { value: ComboStrategy; label: string; description: string }[]
   {
     value: "round-robin",
     label: "Round robin",
-    description: "Requests take turns across the models. A request that fails moves on to the next model.",
+    description: "Requests take turns across the models, in proportion to their weights. A request that fails moves on to the next model.",
   },
   {
     value: "least-used",
     label: "Least used",
     description:
-      "Each request goes to the model with the fewest requests in progress. A request that fails moves on to the next model.",
+      "Each request goes to the model carrying the fewest requests for its weight. A request that fails moves on to the next model.",
   },
 ]
+
+// Fallback runs its models in a fixed order, so only the other two share traffic.
+const weighted = (strategy: ComboStrategy) => strategy !== "fallback"
+
+const maxWeight = 1000
 
 const namePattern = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 
@@ -96,16 +101,18 @@ function ComboCard({
             {!combo.enabled && <Badge variant="secondary">Disabled</Badge>}
           </div>
           <ol className="flex flex-wrap items-center gap-1.5" aria-label="Models">
-            {combo.members.map((id, index) => {
-              const model = modelById.get(id)
+            {combo.members.map((member, index) => {
+              const model = modelById.get(member.model_id)
               const provider = model && providerById.get(model.provider_id)
+              const shares = weighted(combo.strategy) && combo.members.some((other) => other.weight !== member.weight)
               return (
-                <li key={id} className="flex items-center gap-1.5">
+                <li key={member.model_id} className="flex items-center gap-1.5">
                   <span className="text-xs text-muted-foreground tabular-nums">{index + 1}.</span>
                   <span className="rounded-md border px-2 py-0.5 font-mono text-xs">
-                    {model?.model_id ?? `model ${id}`}
+                    {model?.model_id ?? `model ${member.model_id}`}
                     {provider && <span className="text-muted-foreground"> - {provider.name}</span>}
                     {model && !model.enabled && <span className="text-muted-foreground"> (disabled)</span>}
+                    {shares && <span className="text-muted-foreground"> &times;{member.weight}</span>}
                   </span>
                 </li>
               )
@@ -169,11 +176,12 @@ function ComboForm({
   const [name, setName] = useState(combo?.name ?? "")
   const [strategy, setStrategy] = useState<ComboStrategy>(combo?.strategy ?? "fallback")
   const [enabled, setEnabled] = useState(combo?.enabled ?? true)
-  const [members, setMembers] = useState<number[]>(combo?.members ?? [])
+  const [members, setMembers] = useState<ComboMember[]>(combo?.members ?? [])
   const [submitted, setSubmitted] = useState(false)
 
   const comboProviders = new Set(providers.filter((provider) => provider.type === "combo").map((provider) => provider.id))
-  const choices = models.filter((model) => !comboProviders.has(model.provider_id) && !members.includes(model.id))
+  const chosen = new Set(members.map((member) => member.model_id))
+  const choices = models.filter((model) => !comboProviders.has(model.provider_id) && !chosen.has(model.id))
   const modelById = new Map(models.map((model) => [model.id, model]))
   const providerById = new Map(providers.map((provider) => [provider.id, provider]))
   const pending = createCombo.isPending || updateCombo.isPending
@@ -183,6 +191,14 @@ function ComboForm({
     problems.push('Enter a name of letters, digits, ".", "_" and "-" that starts with a letter or digit.')
   }
   if (members.length === 0) problems.push("Add at least one model.")
+  if (weighted(strategy) && members.some((member) => member.weight < 1 || member.weight > maxWeight)) {
+    problems.push(`Give every weight a value between 1 and ${maxWeight}.`)
+  }
+
+  const setWeight = (index: number, value: string) =>
+    setMembers((current) =>
+      current.map((member, i) => (i === index ? { ...member, weight: Number(value) || 0 } : member)),
+    )
 
   const move = (index: number, by: number) =>
     setMembers((current) => {
@@ -260,21 +276,33 @@ function ComboForm({
         <Label htmlFor="combo-add-model">Models</Label>
         {members.length > 0 && (
           <ol className="grid gap-1.5">
-            {members.map((id, index) => {
-              const model = modelById.get(id)
+            {members.map((member, index) => {
+              const model = modelById.get(member.model_id)
               const provider = model && providerById.get(model.provider_id)
+              const name = model?.model_id ?? `model ${member.model_id}`
               return (
-                <li key={id} className="flex items-center gap-2 rounded-md border px-2 py-1">
+                <li key={member.model_id} className="flex items-center gap-2 rounded-md border px-2 py-1">
                   <span className="w-5 text-xs text-muted-foreground tabular-nums">{index + 1}.</span>
                   <span className="min-w-0 flex-1 truncate font-mono text-xs">
-                    {model?.model_id ?? `model ${id}`}
+                    {name}
                     {provider && <span className="text-muted-foreground"> - {provider.name}</span>}
                   </span>
+                  {weighted(strategy) && (
+                    <Input
+                      type="number"
+                      min={1}
+                      max={maxWeight}
+                      className="h-7 w-16 text-xs"
+                      aria-label={`Weight for ${name}`}
+                      value={member.weight}
+                      onChange={(event) => setWeight(index, event.target.value)}
+                    />
+                  )}
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    aria-label={`Move ${model?.model_id ?? id} up`}
+                    aria-label={`Move ${name} up`}
                     disabled={index === 0}
                     onClick={() => move(index, -1)}
                   >
@@ -284,7 +312,7 @@ function ComboForm({
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    aria-label={`Move ${model?.model_id ?? id} down`}
+                    aria-label={`Move ${name} down`}
                     disabled={index === members.length - 1}
                     onClick={() => move(index, 1)}
                   >
@@ -294,8 +322,8 @@ function ComboForm({
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    aria-label={`Remove ${model?.model_id ?? id}`}
-                    onClick={() => setMembers((current) => current.filter((item) => item !== id))}
+                    aria-label={`Remove ${name}`}
+                    onClick={() => setMembers((current) => current.filter((item) => item.model_id !== member.model_id))}
                   >
                     <XIcon />
                   </Button>
@@ -307,11 +335,17 @@ function ComboForm({
         <ModelSelect
           id="combo-add-model"
           value={0}
-          onChange={(id) => setMembers((current) => [...current, id])}
+          onChange={(id) => setMembers((current) => [...current, { model_id: id, weight: 1 }])}
           models={choices}
           providers={providers}
           invalid={submitted && members.length === 0}
         />
+        {weighted(strategy) && members.length > 1 && (
+          <p className="text-xs text-muted-foreground">
+            Weight is a share, not a percentage: 3 against 1 sends three requests to the first model for every one
+            the second gets.
+          </p>
+        )}
       </div>
 
       <div className="flex items-center gap-3">

@@ -15,10 +15,16 @@ import (
 	"github.com/MrMirhan/intellyrouter/internal/store"
 )
 
+// comboMember is one model in a combo and its share of the traffic.
+type comboMember struct {
+	target
+	weight int
+}
+
 // comboTarget is a combo's strategy and its available member models.
 type comboTarget struct {
 	strategy string
-	members  []target
+	members  []comboMember
 }
 
 // subscription reports whether a request to t can reach a Claude subscription.
@@ -27,46 +33,78 @@ func (t target) subscription() bool {
 	if t.config.Type == provider.AnthropicSubscription {
 		return true
 	}
-	return t.combo != nil && slices.ContainsFunc(t.combo.members, func(m target) bool {
+	return t.combo != nil && slices.ContainsFunc(t.combo.members, func(m comboMember) bool {
 		return m.config.Type == provider.AnthropicSubscription
 	})
 }
 
-// comboBalancer keeps, per combo, the next member for round-robin and the
-// requests each member is serving for least-used.
+// comboBalancer keeps, per combo, the round-robin credit each member has built
+// up and the requests each member is serving for least-used.
 type comboBalancer struct {
 	mu       sync.Mutex
-	next     map[int64]int
+	credit   map[int64][]int
 	inFlight map[int64]map[int64]int
 }
 
 func newComboBalancer() *comboBalancer {
-	return &comboBalancer{next: map[int64]int{}, inFlight: map[int64]map[int64]int{}}
+	return &comboBalancer{credit: map[int64][]int{}, inFlight: map[int64]map[int64]int{}}
 }
 
 // order returns the member indexes in the order a request tries them.
 func (b *comboBalancer) order(t target) []int {
 	c := t.combo
-	order := make([]int, len(c.members))
-	for i := range order {
-		order[i] = i
-	}
+	order := make([]int, 0, len(c.members))
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	switch c.strategy {
 	case store.ComboRoundRobin:
-		start := b.next[t.model.ID] % len(order)
-		b.next[t.model.ID] = start + 1
-		for i := range order {
-			order[i] = (start + i) % len(order)
+		// Only the member that serves the request follows the weights. The
+		// rest keep their configured order, as the list a failure falls through.
+		head := b.pick(t.model.ID, c.members)
+		order = append(order, head)
+		for i := range c.members {
+			if i != head {
+				order = append(order, i)
+			}
 		}
 	case store.ComboLeastUsed:
+		for i := range c.members {
+			order = append(order, i)
+		}
 		load := b.inFlight[t.model.ID]
 		slices.SortStableFunc(order, func(x, y int) int {
-			return cmp.Compare(load[c.members[x].model.ID], load[c.members[y].model.ID])
+			// Load per unit of weight, cross-multiplied to stay in integers.
+			return cmp.Compare(load[c.members[x].model.ID]*c.members[y].weight,
+				load[c.members[y].model.ID]*c.members[x].weight)
 		})
+	default:
+		for i := range c.members {
+			order = append(order, i)
+		}
 	}
 	return order
+}
+
+// pick chooses a member by smooth weighted round-robin: every call adds each
+// member's weight to its credit, hands the turn to the member holding the most,
+// and charges that member the whole round. Weights are then spread through the
+// sequence instead of arriving in bursts.
+func (b *comboBalancer) pick(combo int64, members []comboMember) int {
+	credit := b.credit[combo]
+	if len(credit) != len(members) {
+		credit = make([]int, len(members))
+	}
+	total, best := 0, 0
+	for i, m := range members {
+		credit[i] += m.weight
+		total += m.weight
+		if credit[i] > credit[best] {
+			best = i
+		}
+	}
+	credit[best] -= total
+	b.credit[combo] = credit
+	return best
 }
 
 // start counts a request on a member until the returned function runs.
@@ -90,9 +128,9 @@ func (s *Server) resolveCombo(ctx context.Context, p store.Provider, m store.Mod
 		return target{}, err
 	}
 	ct := &comboTarget{strategy: c.Strategy}
-	for _, id := range c.Members {
-		if member, err := s.resolveModel(ctx, id, false); err == nil {
-			ct.members = append(ct.members, member)
+	for _, m := range c.Members {
+		if member, err := s.resolveModel(ctx, m.ModelID, false); err == nil {
+			ct.members = append(ct.members, comboMember{target: member, weight: max(m.Weight, 1)})
 		}
 	}
 	if len(ct.members) == 0 {
@@ -108,7 +146,7 @@ func (s *Server) callCombo(w http.ResponseWriter, r *http.Request, t target, cr 
 	var tries []target
 	for _, i := range s.combos.order(t) {
 		if m := t.combo.members[i]; m.config.Type != provider.AnthropicSubscription || cr.claudeAuth != "" {
-			tries = append(tries, m)
+			tries = append(tries, m.target)
 		}
 	}
 	if len(tries) == 0 {
@@ -149,7 +187,7 @@ func (s *Server) callCombo(w http.ResponseWriter, r *http.Request, t target, cr 
 func (s *Server) completeCombo(ctx context.Context, t target, body []byte) ([]byte, ledger.Usage, target, error) {
 	var errs []error
 	for _, i := range s.combos.order(t) {
-		m := t.combo.members[i]
+		m := t.combo.members[i].target
 		if m.config.Type == provider.AnthropicSubscription {
 			continue
 		}

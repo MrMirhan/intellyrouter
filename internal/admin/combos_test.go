@@ -49,21 +49,32 @@ func TestCombosAndProviderSlugs(t *testing.T) {
 	opus := decodeInto[model](t, c.do("POST", fmt.Sprintf("/api/admin/providers/%d/models", sub.ID), map[string]any{"model_id": "claude-opus-5"}, http.StatusCreated))
 	sonnet := decodeInto[model](t, c.do("POST", fmt.Sprintf("/api/admin/providers/%d/models", sub.ID), map[string]any{"model_id": "claude-sonnet-5"}, http.StatusCreated))
 
-	type comboOut struct {
-		ID       int64   `json:"id"`
-		Name     string  `json:"name"`
-		Strategy string  `json:"strategy"`
-		Members  []int64 `json:"members"`
+	type comboMemberOut struct {
+		ModelID int64 `json:"model_id"`
+		Weight  int   `json:"weight"`
 	}
-	c.do("POST", "/api/admin/combos", map[string]any{"name": "stack", "members": []int64{}}, http.StatusBadRequest)
-	c.do("POST", "/api/admin/combos", map[string]any{"name": "stack", "strategy": "random", "members": []int64{opus.ID}}, http.StatusBadRequest)
-	c.do("POST", "/api/admin/combos", map[string]any{"name": "has space", "members": []int64{opus.ID}}, http.StatusBadRequest)
-	c.do("POST", "/api/admin/combos", map[string]any{"name": "stack", "members": []int64{opus.ID, opus.ID}}, http.StatusBadRequest)
-	combo := decodeInto[comboOut](t, c.do("POST", "/api/admin/combos", map[string]any{"name": "stack", "members": []int64{opus.ID, sonnet.ID}}, http.StatusCreated))
+	type comboOut struct {
+		ID       int64            `json:"id"`
+		Name     string           `json:"name"`
+		Strategy string           `json:"strategy"`
+		Members  []comboMemberOut `json:"members"`
+	}
+	member := func(ids ...int64) []map[string]any {
+		out := make([]map[string]any, 0, len(ids))
+		for _, id := range ids {
+			out = append(out, map[string]any{"model_id": id})
+		}
+		return out
+	}
+	c.do("POST", "/api/admin/combos", map[string]any{"name": "stack", "members": []map[string]any{}}, http.StatusBadRequest)
+	c.do("POST", "/api/admin/combos", map[string]any{"name": "stack", "strategy": "random", "members": member(opus.ID)}, http.StatusBadRequest)
+	c.do("POST", "/api/admin/combos", map[string]any{"name": "has space", "members": member(opus.ID)}, http.StatusBadRequest)
+	c.do("POST", "/api/admin/combos", map[string]any{"name": "stack", "members": member(opus.ID, opus.ID)}, http.StatusBadRequest)
+	combo := decodeInto[comboOut](t, c.do("POST", "/api/admin/combos", map[string]any{"name": "stack", "members": member(opus.ID, sonnet.ID)}, http.StatusCreated))
 	if combo.Strategy != "fallback" || len(combo.Members) != 2 {
 		t.Fatalf("combo = %+v", combo)
 	}
-	c.do("POST", "/api/admin/combos", map[string]any{"name": "nested", "members": []int64{combo.ID}}, http.StatusBadRequest)
+	c.do("POST", "/api/admin/combos", map[string]any{"name": "nested", "members": member(combo.ID)}, http.StatusBadRequest)
 	combo = decodeInto[comboOut](t, c.do("PATCH", fmt.Sprintf("/api/admin/combos/%d", combo.ID), map[string]any{"strategy": "least-used"}, http.StatusOK))
 	if combo.Strategy != "least-used" {
 		t.Fatalf("updated combo = %+v", combo)

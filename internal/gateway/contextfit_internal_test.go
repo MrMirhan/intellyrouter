@@ -69,7 +69,7 @@ func TestFittingTierCountsComboMembers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	combo, err := s.store.CreateCombo(ctx, store.Combo{Name: "stack", Strategy: store.ComboFallback, Enabled: true, Members: []int64{seeing.ID}})
+	combo, err := s.store.CreateCombo(ctx, store.Combo{Name: "stack", Strategy: store.ComboFallback, Enabled: true, Members: []store.ComboMember{{ModelID: seeing.ID, Weight: 1}}})
 	if err != nil {
 		t.Fatal(err)
 	}

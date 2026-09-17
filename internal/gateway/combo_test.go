@@ -73,7 +73,7 @@ func setupCombo(t *testing.T) comboEnv {
 		must(t, err)
 		models[id] = m.ID
 	}
-	combo, err := st.CreateCombo(ctx, store.Combo{Name: "stack", Strategy: store.ComboFallback, Enabled: true, Members: []int64{models["minimax-a"], models["minimax-b"]}})
+	combo, err := st.CreateCombo(ctx, store.Combo{Name: "stack", Strategy: store.ComboFallback, Enabled: true, Members: []store.ComboMember{{ModelID: models["minimax-a"], Weight: 1}, {ModelID: models["minimax-b"], Weight: 1}}})
 	must(t, err)
 	_, err = st.CreateRoute(ctx, store.Route{Name: "claude-combo", Strategy: store.StrategyDirect, Tiers: []store.Tier{{ModelID: combo.ID, Label: "stack"}}})
 	must(t, err)
@@ -115,7 +115,7 @@ func TestComboFallsBackToTheNextModel(t *testing.T) {
 	}
 
 	// When every model fails, the client sees the last model's error.
-	must(t, e.store.UpdateCombo(t.Context(), store.Combo{ID: e.combo.ID, Name: "stack", Strategy: store.ComboFallback, Enabled: true, Members: []int64{e.models["minimax-a"]}}))
+	must(t, e.store.UpdateCombo(t.Context(), store.Combo{ID: e.combo.ID, Name: "stack", Strategy: store.ComboFallback, Enabled: true, Members: []store.ComboMember{{ModelID: e.models["minimax-a"], Weight: 1}}}))
 	if status, out := e.post(t, "claude-combo"); status != http.StatusTooManyRequests || !strings.Contains(out, "rate_limit_error") {
 		t.Fatalf("status %d: %s", status, out)
 	}
