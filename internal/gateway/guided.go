@@ -105,6 +105,9 @@ func (s *Server) guided(w http.ResponseWriter, r *http.Request, route store.Rout
 	if dec.Escalated {
 		note += " (moved up after repeated failures)"
 	}
+	if dec.DeEscalated {
+		note += " (moved back down after clean steps)"
+	}
 	if fitNote != "" {
 		note += "; " + fitNote
 	}

@@ -127,6 +127,7 @@ export interface GuidedSettings {
     review_on_success: boolean
   }
   escalate_after: number
+  de_escalate_after: number
   consult: boolean
 }
 

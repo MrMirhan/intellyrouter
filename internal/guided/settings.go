@@ -17,6 +17,11 @@ type Settings struct {
 	// EscalateAfter is the number of failure checkpoints in one turn after
 	// which the executor moves up one tier. Zero keeps the base tier.
 	EscalateAfter int `json:"escalate_after"`
+	// DeEscalateAfter is the number of steps that bring no new failed tool
+	// result after which an escalated turn drops back one tier. A new failure
+	// starts the count again. Zero keeps the turn on the tier it reached, so
+	// one rough patch holds the rest of the turn on the expensive executor.
+	DeEscalateAfter int `json:"de_escalate_after"`
 	// Consult gives the executor the ask_director tool, which the gateway answers.
 	Consult bool `json:"consult"`
 }
@@ -61,10 +66,11 @@ func ValidEffort(effort string) bool { return slices.Contains(efforts, effort) }
 
 func DefaultSettings() Settings {
 	return Settings{
-		Director:      DirectorSettings{Effort: "medium", MaxCallsPerTurn: 6},
-		Checkpoints:   Checkpoints{TurnStart: true, FailedResults: 2, Repeats: 3, Unsure: true, ReviewOnSuccess: true},
-		Consult:       true,
-		EscalateAfter: 2,
+		Director:        DirectorSettings{Effort: "medium", MaxCallsPerTurn: 6},
+		Checkpoints:     Checkpoints{TurnStart: true, FailedResults: 2, Repeats: 3, Unsure: true, ReviewOnSuccess: true},
+		Consult:         true,
+		EscalateAfter:   2,
+		DeEscalateAfter: 5,
 	}
 }
 
@@ -85,6 +91,8 @@ func ParseSettings(raw string) (Settings, error) {
 		return Settings{}, errors.New("director.max_calls_per_turn must be at least 1")
 	case s.Checkpoints.FailedResults < 0 || s.Checkpoints.Repeats < 0 || s.Checkpoints.Steps < 0 || s.EscalateAfter < 0:
 		return Settings{}, errors.New("checkpoint counts and escalate_after cannot be negative")
+	case s.DeEscalateAfter < 0:
+		return Settings{}, errors.New("de_escalate_after cannot be negative")
 	}
 	return s, nil
 }
@@ -96,12 +104,32 @@ type Decision struct {
 	Detail    string
 	Tier      int
 	Escalated bool
+	// DeEscalated is set on the request that drops the turn back a tier.
+	DeEscalated bool
 }
 
 // Plan updates the turn state for one request and decides whether the
 // director looks at the session first. Only one checkpoint fires per step.
 func (s Settings) Plan(t Turn, st *State, tiers int) Decision {
 	var d Decision
+	// An escalated turn works its way back down: steps that bring no new
+	// failure count towards the tier below, and a new failure starts the count
+	// again. Without this one rough patch holds the whole rest of the turn on
+	// the expensive executor, however well it goes afterwards.
+	if s.DeEscalateAfter > 0 && st.Tier > 0 {
+		switch {
+		case t.FailedResults > st.SeenFailures:
+			st.CleanSteps = 0
+		case t.Steps > st.SeenStep:
+			st.CleanSteps += t.Steps - st.SeenStep
+			if st.CleanSteps >= s.DeEscalateAfter {
+				st.Tier--
+				st.CleanSteps = 0
+				d.DeEscalated = true
+			}
+		}
+	}
+	st.SeenFailures, st.SeenStep = t.FailedResults, t.Steps
 	if st.DirectorCalls < s.Director.MaxCallsPerTurn && t.Steps != st.LastCheckpointStep {
 		c := s.Checkpoints
 		sinceCheck := t.Steps - max(st.LastCheckpointStep, 0)

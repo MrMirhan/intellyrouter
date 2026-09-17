@@ -184,6 +184,14 @@ export function GuidedSettingsFields({
               min={0}
               onChange={(value) => onChange({ ...settings, escalate_after: value })}
             />
+            <CountField
+              id="de-escalate-after"
+              label="Move back down after"
+              hint="Steps with no new failure that return the turn to the executor below. 0 keeps the tier it reached."
+              value={settings.de_escalate_after}
+              min={0}
+              onChange={(value) => onChange({ ...settings, de_escalate_after: value })}
+            />
           </div>
         </div>
       </section>

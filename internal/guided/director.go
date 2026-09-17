@@ -406,7 +406,14 @@ type State struct {
 	FailureCheckpoints int
 	Reviewed           bool
 	Tier               int
-	AdvisorCalls       int
+	// SeenStep and SeenFailures are the step and failure counts of the previous
+	// request, which is how a turn above the base tier measures clean progress.
+	SeenStep     int
+	SeenFailures int
+	// CleanSteps counts the steps since the last new failure while the turn is
+	// above the base tier.
+	CleanSteps   int
+	AdvisorCalls int
 	// Advice is the advisor's latest answer in the turn, to AdviceQuestion.
 	Advice         string
 	AdviceQuestion string

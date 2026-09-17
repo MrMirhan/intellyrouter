@@ -61,7 +61,11 @@ func TestPlan(t *testing.T) {
 	step(Turn{Steps: 5, FailedResults: 4, RepeatCount: 5, Unsure: true}, ReasonUnsure, 1)
 	step(Turn{Steps: 6, FailedResults: 4, EditedFiles: true, LastResultsPassed: true}, ReasonReview, 1)
 	step(Turn{Steps: 7, FailedResults: 4, RepeatCount: 6}, ReasonRepeat, 1)
-	step(Turn{Steps: 11, FailedResults: 4, RepeatCount: 6}, ReasonSteps, 1)
+	// Steps 5 to 11 bring no new failure, which is the default number of clean
+	// steps that returns the turn to the executor below.
+	if d := step(Turn{Steps: 11, FailedResults: 4, RepeatCount: 6}, ReasonSteps, 0); !d.DeEscalated {
+		t.Fatalf("a recovered turn should drop a tier: %+v", d)
+	}
 	if st.DirectorCalls != 8 || st.LastRepeatCount != 6 {
 		t.Fatalf("state = %+v", st)
 	}

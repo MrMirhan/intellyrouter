@@ -16,6 +16,7 @@ export const defaultGuidedSettings: GuidedSettings = {
     review_on_success: true,
   },
   escalate_after: 2,
+  de_escalate_after: 5,
   consult: true,
 }
 
@@ -50,6 +51,7 @@ export function guidedSettings(route: Route): GuidedSettings {
     director: { ...defaultGuidedSettings.director, ...route.settings.director },
     checkpoints: { ...defaultGuidedSettings.checkpoints, ...route.settings.checkpoints },
     escalate_after: route.settings.escalate_after ?? defaultGuidedSettings.escalate_after,
+    de_escalate_after: route.settings.de_escalate_after ?? defaultGuidedSettings.de_escalate_after,
     consult: route.settings.consult ?? defaultGuidedSettings.consult,
   }
 }
