@@ -11,12 +11,83 @@ import (
 
 // dropAdvisorTools removes the advisor server tool when the provider is not
 // Anthropic: Anthropic runs that tool on its own servers, and other providers
-// reject the request. It reports whether it removed a tool.
+// reject the request. It reports whether it changed the body.
+//
+// The tool definition is not the whole of it. Once an Anthropic tier has used
+// the advisor, every later request carries the advisor_tool_use and
+// advisor_tool_result blocks it produced, and a provider that never knew the
+// tool rejects those blocks as an unsupported content type. So the blocks go
+// with the definition.
 func dropAdvisorTools(t target, body []byte) ([]byte, bool, error) {
 	if t.config.Type == provider.Anthropic || t.config.Type == provider.AnthropicSubscription {
 		return body, false, nil
 	}
-	return removeAdvisorTools(body, "")
+	out, tools, err := removeAdvisorTools(body, "")
+	if err != nil {
+		return nil, false, err
+	}
+	out, blocks, err := removeContentBlocks(out, func(kind string) bool {
+		return strings.HasPrefix(kind, "advisor_")
+	})
+	return out, tools || blocks, err
+}
+
+// removeContentBlocks drops the content blocks that match from every message,
+// and the message itself when nothing is left of it.
+func removeContentBlocks(body []byte, match func(kind string) bool) ([]byte, bool, error) {
+	spans, err := jsonbytes.TopLevel(body)
+	if err != nil {
+		return nil, false, err
+	}
+	sp, ok := spans["messages"]
+	if !ok {
+		return body, false, nil
+	}
+	var msgs []json.RawMessage
+	if err := json.Unmarshal(body[sp.Start:sp.End], &msgs); err != nil {
+		return nil, false, err
+	}
+	kept, changed := make([][]byte, 0, len(msgs)), false
+	for _, m := range msgs {
+		var msg struct {
+			Content json.RawMessage `json:"content"`
+		}
+		var content []json.RawMessage
+		// A message whose content is a plain string carries no blocks.
+		if json.Unmarshal(m, &msg) != nil || json.Unmarshal(msg.Content, &content) != nil {
+			kept = append(kept, m)
+			continue
+		}
+		blocks := make([][]byte, 0, len(content))
+		for _, b := range content {
+			var head struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(b, &head) == nil && match(head.Type) {
+				changed = true
+				continue
+			}
+			blocks = append(blocks, b)
+		}
+		if len(blocks) == len(content) {
+			kept = append(kept, m)
+			continue
+		}
+		// An empty message is itself invalid, so it goes with its blocks.
+		if len(blocks) == 0 {
+			continue
+		}
+		out, err := jsonbytes.SetField(m, "content", append(append([]byte{'['}, bytes.Join(blocks, []byte{','})...), ']'))
+		if err != nil {
+			return nil, false, err
+		}
+		kept = append(kept, out)
+	}
+	if !changed {
+		return body, false, nil
+	}
+	out, err := jsonbytes.SetField(body, "messages", append(append([]byte{'['}, bytes.Join(kept, []byte{','})...), ']'))
+	return out, err == nil, err
 }
 
 // removeAdvisorTools removes advisor server tools. With a model it removes only

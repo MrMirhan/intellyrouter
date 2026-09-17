@@ -31,6 +31,10 @@ var advisorPairing = regexp.MustCompile(`'([^']+)' cannot be used as an advisor`
 
 var extraInputs = regexp.MustCompile(`^([a-z_]+)(?:\.[^:]*)?: Extra inputs are not permitted`)
 
+// unsupportedBlock matches a provider naming a content block type it does not
+// know, such as "messages.12.content.1: unsupported content type 'thinking'".
+var unsupportedBlock = regexp.MustCompile(`(?i)(?:unsupported|unknown|invalid) content (?:block )?type:? '?"?([a-z][a-z0-9_]*)`)
+
 // adaptationFor maps a 400 error message to the change that avoids it.
 func adaptationFor(message string) (string, bool) {
 	lower := strings.ToLower(message)
@@ -50,10 +54,20 @@ func adaptationFor(message string) (string, bool) {
 	if strings.Contains(strings.ToLower(message), "cannot be used as an advisor") {
 		return "advisor", true
 	}
+	if m := unsupportedBlock.FindStringSubmatch(message); m != nil && !essentialBlocks[m[1]] {
+		return "block:" + m[1], true
+	}
 	if m := extraInputs.FindStringSubmatch(message); m != nil && !essentialFields[m[1]] {
 		return "field:" + m[1], true
 	}
 	return "", false
+}
+
+// essentialBlocks carry the conversation itself. Dropping one loses what the
+// request is asking about, so a provider that rejects it is a provider the
+// route should not be using.
+var essentialBlocks = map[string]bool{
+	"text": true, "image": true, "tool_use": true, "tool_result": true, "document": true,
 }
 
 type compat struct {
@@ -127,6 +141,9 @@ func adapt(body []byte, adaptation string) ([]byte, bool, error) {
 		return removeAdvisorTools(body, "")
 	case strings.HasPrefix(adaptation, "advisor:"):
 		return removeAdvisorTools(body, strings.TrimPrefix(adaptation, "advisor:"))
+	case strings.HasPrefix(adaptation, "block:"):
+		kind := strings.TrimPrefix(adaptation, "block:")
+		return removeContentBlocks(body, func(t string) bool { return t == kind })
 	case strings.HasPrefix(adaptation, "field:"):
 		return jsonbytes.RemoveField(body, strings.TrimPrefix(adaptation, "field:"))
 	}
