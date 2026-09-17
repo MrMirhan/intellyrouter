@@ -100,6 +100,65 @@ func (e comboEnv) post(t *testing.T, model string) (int, string) {
 	return resp.StatusCode, string(out)
 }
 
+func (e comboEnv) postImage(t *testing.T, model string) (int, string) {
+	t.Helper()
+	body := `{"model":"` + model + `","max_tokens":64,"stream":true,"messages":[{"role":"user","content":[` +
+		`{"type":"image","source":{"type":"base64","media_type":"image/png","data":"iVBORw0KGgo="}},` +
+		`{"type":"text","text":"what is this"}]}]}`
+	resp, out := send(t, http.MethodPost, e.url+"/v1/messages", body, map[string]string{"X-Intelly-Key": e.key})
+	return resp.StatusCode, string(out)
+}
+
+// A combo takes images when any member does, so an image request must reach
+// only the members that read one.
+func TestComboSkipsMembersThatDoNotReadImages(t *testing.T) {
+	e := setupCombo(t)
+	ctx := t.Context()
+	seeing, err := e.store.GetModel(ctx, e.models["minimax-b"])
+	must(t, err)
+	seeing.Vision = true
+	must(t, e.store.UpdateModel(ctx, seeing))
+	must(t, e.store.UpdateCombo(ctx, store.Combo{ID: e.combo.ID, Name: "stack", Strategy: store.ComboRoundRobin, Enabled: true, Members: e.combo.Members}))
+
+	// minimax-a comes first in the rotation and cannot read images.
+	for range 4 {
+		if status, out := e.postImage(t, "claude-combo"); status != http.StatusOK {
+			t.Fatalf("status %d: %s", status, out)
+		}
+	}
+	for _, model := range e.calls() {
+		if model != "minimax-b" {
+			t.Fatalf("an image request reached %s, which does not read images", model)
+		}
+	}
+	leg := requestLegs(t, e.store)[0][0]
+	if !strings.Contains(leg.Note, "skipped 1 that do not read one") {
+		t.Fatalf("leg note = %q", leg.Note)
+	}
+
+	// A request without an image still uses every member.
+	for range 4 {
+		if status, out := e.post(t, "claude-combo"); status != http.StatusOK {
+			t.Fatalf("status %d: %s", status, out)
+		}
+	}
+	if got := e.calls(); !slices.Contains(got, "minimax-a") {
+		t.Fatalf("calls without an image = %v, want both members", got)
+	}
+}
+
+// With no member that reads images the combo tries them all, so the upstream
+// reports the problem instead of the gateway refusing the request.
+func TestComboWithoutVisionStillTries(t *testing.T) {
+	e := setupCombo(t)
+	if status, out := e.postImage(t, "claude-combo"); status != http.StatusOK {
+		t.Fatalf("status %d: %s", status, out)
+	}
+	if got := e.calls(); len(got) == 0 {
+		t.Fatal("no upstream call for an image request on a combo with no vision member")
+	}
+}
+
 func TestComboFallsBackToTheNextModel(t *testing.T) {
 	e := setupCombo(t)
 	e.failA.Store(true)

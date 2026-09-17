@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/MrMirhan/intellyrouter/internal/guided"
 	"github.com/MrMirhan/intellyrouter/internal/ledger"
 	"github.com/MrMirhan/intellyrouter/internal/provider"
 	"github.com/MrMirhan/intellyrouter/internal/store"
@@ -143,11 +144,24 @@ func (s *Server) resolveCombo(ctx context.Context, p store.Provider, m store.Mod
 // When a member fails before its response starts, the next member gets the
 // request, so the client sees the first answer or the last member's error.
 func (s *Server) callCombo(w http.ResponseWriter, r *http.Request, t target, cr clientRequest) ledger.Leg {
-	var tries []target
+	var tries, seeing []target
 	for _, i := range s.combos.order(t) {
-		if m := t.combo.members[i]; m.config.Type != provider.AnthropicSubscription || cr.claudeAuth != "" {
-			tries = append(tries, m.target)
+		m := t.combo.members[i]
+		if m.config.Type == provider.AnthropicSubscription && cr.claudeAuth == "" {
+			continue
 		}
+		tries = append(tries, m.target)
+		if m.model.Vision {
+			seeing = append(seeing, m.target)
+		}
+	}
+	// A combo counts as taking images when any one member does, so a request
+	// that carries one skips the members that would only reject it. When no
+	// member reads images the combo still tries them all: a tier chose this
+	// combo, and the upstream error says more than a refusal here would.
+	blind := 0
+	if guided.HasImage(cr.body) && len(seeing) > 0 {
+		blind, tries = len(tries)-len(seeing), seeing
 	}
 	if len(tries) == 0 {
 		writeError(w, http.StatusUnauthorized, "authentication_error", errNoClaudeLogin)
@@ -158,6 +172,9 @@ func (s *Server) callCombo(w http.ResponseWriter, r *http.Request, t target, cr 
 	var failed []string
 	note := func(leg ledger.Leg) ledger.Leg {
 		n := "combo " + t.model.ModelID
+		if blind > 0 {
+			n += fmt.Sprintf("; request has an image, skipped %d that do not read one", blind)
+		}
 		if len(failed) > 0 {
 			n += " after " + strings.Join(failed, ", ")
 		}
