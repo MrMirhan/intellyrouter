@@ -90,8 +90,42 @@ func removeContentBlocks(body []byte, match func(kind string) bool) ([]byte, boo
 	return out, err == nil, err
 }
 
-// removeAdvisorTools removes advisor server tools. With a model it removes only
-// the advisor that uses that model.
+// removeTool removes one tool from the request's tool list by name. A provider
+// that validates tool schemas against its own meta-schema can reject a tool
+// Anthropic accepts; the request cannot proceed until that tool is gone.
+func removeTool(body []byte, name string) ([]byte, bool, error) {
+	spans, err := jsonbytes.TopLevel(body)
+	if err != nil {
+		return nil, false, err
+	}
+	sp, ok := spans["tools"]
+	if !ok {
+		return body, false, nil
+	}
+	var tools []json.RawMessage
+	if err := json.Unmarshal(body[sp.Start:sp.End], &tools); err != nil {
+		return nil, false, err
+	}
+	kept := make([][]byte, 0, len(tools))
+	for _, tool := range tools {
+		var head struct {
+			Name string `json:"name"`
+		}
+		if json.Unmarshal(tool, &head) == nil && head.Name == name {
+			continue
+		}
+		kept = append(kept, []byte(tool))
+	}
+	if len(kept) == len(tools) {
+		return body, false, nil
+	}
+	if len(kept) == 0 {
+		out, _, err := jsonbytes.RemoveField(body, "tools")
+		return out, true, err
+	}
+	out, err := jsonbytes.SetField(body, "tools", append(append([]byte{'['}, bytes.Join(kept, []byte{','})...), ']'))
+	return out, true, err
+}
 func removeAdvisorTools(body []byte, model string) ([]byte, bool, error) {
 	spans, err := jsonbytes.TopLevel(body)
 	if err != nil {

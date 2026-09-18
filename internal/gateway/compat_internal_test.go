@@ -15,6 +15,8 @@ func TestAdaptationFor(t *testing.T) {
 		"messages.0.content: Extra inputs are not permitted":                               "",
 		"max_tokens: 200000 > 64000, which is the maximum":                                 "",
 		"`clear_thinking_20251015` strategy requires `thinking` to be enabled or adaptive": "clear_thinking",
+		`Invalid schema for function 'Artifact': ... is not valid under any of the schemas listed in the 'anyOf' keyword`: "tool:Artifact",
+		"messages.0.content: unsupported content type 'thinking'":                       "block:thinking",
 	}
 	for msg, want := range cases {
 		got, ok := adaptationFor(msg)
@@ -37,6 +39,9 @@ func TestAdapt(t *testing.T) {
 		{"system_messages", `{"messages":[{"role":"user","content":"hi"},{"role":"system","content":"be brief"}]}`,
 			`{"messages":[{"role":"user","content":"hi"},{"role":"user","content":"be brief"}]}`},
 		{"field:context_management", `{"model":"m","context_management":{"edits":[]}}`, `{"model":"m"}`},
+		{"tool:Artifact", `{"model":"m","tools":[{"name":"Bash","input_schema":{}},{"name":"Artifact","input_schema":{}}]}`,
+			`{"model":"m","tools":[{"name":"Bash","input_schema":{}}]}`},
+		{"tool:Artifact", `{"model":"m","tools":[{"name":"Artifact","input_schema":{}}]}`, `{"model":"m"}`},
 	}
 	for _, c := range cases {
 		got, changed, err := adapt([]byte(c.in), c.adaptation)

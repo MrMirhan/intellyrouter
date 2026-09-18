@@ -35,6 +35,15 @@ var extraInputs = regexp.MustCompile(`^([a-z_]+)(?:\.[^:]*)?: Extra inputs are n
 // know, such as "messages.12.content.1: unsupported content type 'thinking'".
 var unsupportedBlock = regexp.MustCompile(`(?i)(?:unsupported|unknown|invalid) content (?:block )?type:? '?"?([a-z][a-z0-9_]*)`)
 
+// invalidToolSchema matches a provider rejecting a tool's own parameter
+// schema, such as "Invalid schema for function 'Artifact': ... is not valid
+// under any of the schemas listed in the 'anyOf' keyword". Claude Code sends
+// its full built-in tool set on every request regardless of route; a stricter
+// provider that validates tool schemas against its own meta-schema can reject
+// one Anthropic never rejects. The request cannot proceed until that tool's
+// definition is gone, so this drops it and remembers not to send it again.
+var invalidToolSchema = regexp.MustCompile(`(?i)invalid schema for (?:function|tool) '([^']+)'`)
+
 // adaptationFor maps a 400 error message to the change that avoids it.
 func adaptationFor(message string) (string, bool) {
 	lower := strings.ToLower(message)
@@ -56,6 +65,9 @@ func adaptationFor(message string) (string, bool) {
 	}
 	if m := unsupportedBlock.FindStringSubmatch(message); m != nil && !essentialBlocks[m[1]] {
 		return "block:" + m[1], true
+	}
+	if m := invalidToolSchema.FindStringSubmatch(message); m != nil {
+		return "tool:" + m[1], true
 	}
 	if m := extraInputs.FindStringSubmatch(message); m != nil && !essentialFields[m[1]] {
 		return "field:" + m[1], true
@@ -146,6 +158,8 @@ func adapt(body []byte, adaptation string) ([]byte, bool, error) {
 		return removeContentBlocks(body, func(t string) bool { return t == kind })
 	case strings.HasPrefix(adaptation, "field:"):
 		return jsonbytes.RemoveField(body, strings.TrimPrefix(adaptation, "field:"))
+	case strings.HasPrefix(adaptation, "tool:"):
+		return removeTool(body, strings.TrimPrefix(adaptation, "tool:"))
 	}
 	return body, false, nil
 }
