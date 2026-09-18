@@ -282,11 +282,11 @@ function ComboForm({
               const name = model?.model_id ?? `model ${member.model_id}`
               return (
                 <li key={member.model_id} className="flex items-center gap-2 rounded-md border px-2 py-1">
-                  <span className="w-5 text-xs text-muted-foreground tabular-nums">{index + 1}.</span>
-                  <span className="min-w-0 flex-1 truncate font-mono text-xs">
-                    {name}
-                    {provider && <span className="text-muted-foreground"> - {provider.name}</span>}
-                  </span>
+                  <span className="w-5 shrink-0 text-xs text-muted-foreground tabular-nums">{index + 1}.</span>
+                  <span className="min-w-0 flex-1 truncate font-mono text-xs">{name}</span>
+                  {provider && (
+                    <span className="shrink-0 text-xs text-muted-foreground">{provider.name}</span>
+                  )}
                   {weighted(strategy) && (
                     <Input
                       type="number"

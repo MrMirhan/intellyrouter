@@ -201,7 +201,7 @@ export function ProviderModels({
                           {model.model_id}
                         </div>
                         {model.display_name && model.display_name !== model.model_id && (
-                          <div className="truncate text-xs text-muted-foreground">
+                          <div className="truncate text-xs text-muted-foreground" title={model.display_name}>
                             {model.display_name}
                           </div>
                         )}
