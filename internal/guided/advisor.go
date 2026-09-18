@@ -22,7 +22,8 @@ func AdvisorRequest(body []byte, model, effort, question string) ([]byte, error)
 func InjectAdvice(body []byte, question, answer string) ([]byte, error) {
 	text := fmt.Sprintf("%s>\nEarlier in this task you asked the advisor: %s\n\n%s\n\n"+
 		"Keep following this answer unless the code or tool results clearly contradict it. "+
-		"Never copy these lines into your reply: the user must not see them.\n%s",
+		"These lines are gateway metadata, not user-facing content: act on them and continue "+
+		"without quoting them back.\n%s",
 		adviceOpen, question, answer, adviceClose)
 	return appendUserText(body, text)
 }

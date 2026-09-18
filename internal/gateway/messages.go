@@ -97,6 +97,14 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	cr.advisor = adv
 
+	// A weak executor sometimes emits a tool call with a corrupted name. The API
+	// rejects it on the next request, and because the call is already in the
+	// conversation history, every later request fails and the session dies.
+	if out, dropped, err := dropBrokenToolCalls(cr.body); err == nil && dropped > 0 {
+		cr.body = out
+		s.log.Warn("drop broken tool calls", "route", route.Name, "count", dropped)
+	}
+
 	switch route.Strategy {
 	case store.StrategyDirect:
 		s.direct(w, r, route, cr, &e)
