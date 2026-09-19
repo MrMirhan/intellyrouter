@@ -56,8 +56,16 @@ func Analyze(body []byte) (Turn, error) {
 			}
 		}
 	}
-	// The position keeps two identical prompts ("continue") apart.
-	sum := sha256.Sum256([]byte(strconv.Itoa(promptAt) + "\x00" + t.Prompt))
+	// The whole prefix up to the prompt, not just its text, keeps two turns
+	// apart: a short generic prompt ("devam et", "ok") repeats often, and after
+	// /clear or a compaction the position resets too, so text and position
+	// alone can collide with an unrelated earlier turn and hand it that turn's
+	// director guidance or escalation state.
+	prefix, err := json.Marshal(req.Messages[:promptAt+1])
+	if err != nil {
+		prefix = []byte(strconv.Itoa(promptAt) + "\x00" + t.Prompt)
+	}
+	sum := sha256.Sum256(prefix)
 	t.Key = hex.EncodeToString(sum[:8])
 	for i := promptAt - 1; i >= 0; i-- {
 		if req.Messages[i].Role == "assistant" {

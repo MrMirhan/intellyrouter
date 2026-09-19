@@ -47,6 +47,31 @@ func TestAnalyzeFindsHumanPromptAndErrorStreak(t *testing.T) {
 	}
 }
 
+// Same short prompt at the same position after /clear must NOT inherit the
+// previous turn's escalation or guidance state: it is a fresh turn.
+func TestAnalyzeKeyAfterClear(t *testing.T) {
+	before := `{"messages":[
+		{"role":"user","content":"Add login"},
+		{"role":"assistant","content":[{"type":"text","text":"Done."}]},
+		{"role":"user","content":"devam et"}
+	]}`
+	after := `{"messages":[
+		{"role":"user","content":"devam et"}
+	]}`
+
+	t1, err := Analyze([]byte(before))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t2, err := Analyze([]byte(after))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if t1.Key == t2.Key {
+		t.Fatalf("/clear reused the old turn key (%s); prefix-only hash collided", t1.Key)
+	}
+}
+
 func TestMarkerTier(t *testing.T) {
 	labels := []string{"flash", "pro", "opus"}
 	cases := []struct {
