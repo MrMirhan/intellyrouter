@@ -35,6 +35,7 @@ ENV USE_BUILTIN_RIPGREP=0
 # home, because copying the tree afterwards leaves that symlink aimed at
 # /root, which mode 0700 keeps the runtime user out of.
 RUN apk add --no-cache ca-certificates tzdata bash curl libgcc libstdc++ ripgrep \
+ && apk add --no-cache go python3 py3-pip \
  && addgroup -S intellyrouter && adduser -S -G intellyrouter -h /home/intellyrouter intellyrouter \
  && curl -fsSL https://claude.ai/install.sh -o /tmp/install.sh \
  && HOME=/home/intellyrouter bash /tmp/install.sh ${CLAUDE_VERSION} \
