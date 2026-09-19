@@ -22,13 +22,16 @@ import (
 )
 
 type comboEnv struct {
-	url    string
-	key    string
-	store  *store.Store
-	combo  store.Combo
-	calls  func() []string
-	failA  *atomic.Bool
-	models map[string]int64
+	url     string
+	key     string
+	store   *store.Store
+	combo   store.Combo
+	calls   func() []string
+	failA   *atomic.Bool
+	truncA  *atomic.Bool
+	refuseA *atomic.Bool
+	emptyA  *atomic.Bool
+	models  map[string]int64
 }
 
 // setupCombo builds a MiniMax provider with the slug "mm", two models, a
@@ -41,6 +44,9 @@ func setupCombo(t *testing.T) comboEnv {
 	var mu sync.Mutex
 	var calls []string
 	failA := &atomic.Bool{}
+	truncA := &atomic.Bool{}
+	refuseA := &atomic.Bool{}
+	emptyA := &atomic.Bool{}
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		var body struct {
@@ -54,6 +60,35 @@ func setupCombo(t *testing.T) comboEnv {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)
 			_, _ = io.WriteString(w, `{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}`)
+			return
+		}
+		if body.Model == "minimax-a" && truncA.Load() {
+			// A stream cut off after message_start: no message_stop, no content.
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, "event: message_start\n"+
+				`data: {"type":"message_start","message":{"id":"msg_cut","type":"message","role":"assistant","model":"minimax-a","content":[],"stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}`+"\n\n")
+			return
+		}
+		if body.Model == "minimax-a" && refuseA.Load() {
+			// A refusal with no content: the client saw nothing.
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, "event: message_start\n"+
+				`data: {"type":"message_start","message":{"id":"msg_ref","type":"message","role":"assistant","model":"minimax-a","content":[],"stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}`+"\n\n"+
+				"event: message_delta\n"+
+				`data: {"type":"message_delta","delta":{"stop_reason":"refusal","stop_details":{"type":"refusal","category":"cyber","explanation":"declined"}},"usage":{"output_tokens":0}}`+"\n\n"+
+				"event: message_stop\n"+
+				`data: {"type":"message_stop"}`+"\n\n")
+			return
+		}
+		if body.Model == "minimax-a" && emptyA.Load() {
+			// A complete stream that carries no content block at all.
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, "event: message_start\n"+
+				`data: {"type":"message_start","message":{"id":"msg_empty","type":"message","role":"assistant","model":"minimax-a","content":[],"stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}`+"\n\n"+
+				"event: message_delta\n"+
+				`data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":0}}`+"\n\n"+
+				"event: message_stop\n"+
+				`data: {"type":"message_stop"}`+"\n\n")
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -84,13 +119,15 @@ func setupCombo(t *testing.T) comboEnv {
 	gateway.New(st, ledger.NewRecorder(st, log), up.Client(), log).Register(mux)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	return comboEnv{url: srv.URL, key: key, store: st, combo: combo, failA: failA, models: models, calls: func() []string {
-		mu.Lock()
-		defer mu.Unlock()
-		out := slices.Clone(calls)
-		calls = nil
-		return out
-	}}
+	return comboEnv{url: srv.URL, key: key, store: st, combo: combo,
+		failA: failA, truncA: truncA, refuseA: refuseA, emptyA: emptyA,
+		models: models, calls: func() []string {
+			mu.Lock()
+			defer mu.Unlock()
+			out := slices.Clone(calls)
+			calls = nil
+			return out
+		}}
 }
 
 func (e comboEnv) post(t *testing.T, model string) (int, string) {
@@ -177,6 +214,54 @@ func TestComboFallsBackToTheNextModel(t *testing.T) {
 	must(t, e.store.UpdateCombo(t.Context(), store.Combo{ID: e.combo.ID, Name: "stack", Strategy: store.ComboFallback, Enabled: true, Members: []store.ComboMember{{ModelID: e.models["minimax-a"], Weight: 1}}}))
 	if status, out := e.post(t, "claude-combo"); status != http.StatusTooManyRequests || !strings.Contains(out, "rate_limit_error") {
 		t.Fatalf("status %d: %s", status, out)
+	}
+}
+
+// A member whose stream was cut off before it produced any content is not a
+// usable answer: the combo moves to the next member, and the client never sees
+// the broken stream.
+func TestComboRetriesAMemberThatTruncatedTheStream(t *testing.T) {
+	e := setupCombo(t)
+	e.truncA.Store(true)
+	status, out := e.post(t, "claude-combo")
+	if status != http.StatusOK || !strings.Contains(out, "message_stop") {
+		t.Fatalf("status %d: %s", status, out)
+	}
+	if got := e.calls(); !slices.Equal(got, []string{"minimax-a", "minimax-b"}) {
+		t.Fatalf("upstream calls = %v", got)
+	}
+	leg := requestLegs(t, e.store)[0][0]
+	if leg.Model != "minimax-b" || leg.Status != ledger.StatusOK {
+		t.Fatalf("leg = %+v", leg)
+	}
+}
+
+// A refusal that produced no content is retryable on another member: Anthropic
+// says re-sending to the same model usually refuses again, so the different
+// provider behind the next member is the way out.
+func TestComboRetriesARefusalWithNoContent(t *testing.T) {
+	e := setupCombo(t)
+	e.refuseA.Store(true)
+	status, out := e.post(t, "claude-combo")
+	if status != http.StatusOK || !strings.Contains(out, "message_stop") {
+		t.Fatalf("status %d: %s", status, out)
+	}
+	if got := e.calls(); !slices.Equal(got, []string{"minimax-a", "minimax-b"}) {
+		t.Fatalf("upstream calls = %v", got)
+	}
+}
+
+// A complete stream that carries no content block is an empty answer, which
+// Claude Code reports as a malformed response. The combo retries it.
+func TestComboRetriesAnEmptyAnswer(t *testing.T) {
+	e := setupCombo(t)
+	e.emptyA.Store(true)
+	status, out := e.post(t, "claude-combo")
+	if status != http.StatusOK || !strings.Contains(out, "message_stop") {
+		t.Fatalf("status %d: %s", status, out)
+	}
+	if got := e.calls(); !slices.Equal(got, []string{"minimax-a", "minimax-b"}) {
+		t.Fatalf("upstream calls = %v", got)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"mime"
 	"net/http"
@@ -17,6 +18,17 @@ import (
 )
 
 const maxResponseBytes = 64 << 20
+
+// errStreamTruncated reports a stream that ended without its message_stop
+// event. The client saw part of an answer and has no way to know it was cut
+// off; the combo moves to the next member when no content reached it.
+var errStreamTruncated = errors.New("upstream stream ended without message_stop")
+
+// streamReleaser is implemented by writers that hold a 2xx response while the
+// upstream streams it. The relay calls releaseOnContent when the first
+// content delta arrives, so the held bytes are flushed and subsequent bytes
+// are passed straight through.
+type streamReleaser interface{ releaseOnContent() }
 
 var skipResponseHeaders = map[string]bool{
 	"Connection":         true,
@@ -86,14 +98,43 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, t target, body 
 	switch {
 	case relayErr != nil && r.Context().Err() != nil:
 		leg.Status = ledger.StatusCanceled
+	case errors.Is(relayErr, errStreamTruncated):
+		leg.Status, leg.Error = ledger.StatusUpstreamError, relayErr.Error()
+		failHeld(w, relayErr.Error())
 	case relayErr != nil:
 		leg.Status, leg.Error = ledger.StatusError, relayErr.Error()
 	case resp.StatusCode >= 300 || tr.Error != "":
 		leg.Status, leg.Error = ledger.StatusUpstreamError, tr.Error
+	case !tr.Usable():
+		// The upstream returned a 2xx that is not an answer: truncated stream,
+		// empty body, or a refusal with no content. Combo retries on the next
+		// member; direct routes pass the upstream's 200 through.
+		if tr.Refused {
+			leg.Error = "refusal: " + tr.RefusalDetail
+		} else if !tr.Completed {
+			leg.Error = "upstream stream ended without message_stop"
+		} else {
+			leg.Error = "upstream returned an empty response"
+		}
+		leg.Status = ledger.StatusUpstreamError
+		failHeld(w, leg.Error)
 	default:
 		leg.Status = ledger.StatusOK
 	}
+	// Releasing a held response is the caller's job: a combo decides between
+	// the next member and the client, and the context fitter decides between
+	// a smaller tier and the client. Releasing here would take that away.
 	return leg
+}
+
+// failHeld turns a writer's held 2xx into an error, so a combo's retryable()
+// reports true and the next member gets the request. It is a no-op for a
+// writer that does not hold responses, or one that already passed content
+// through: the client has already seen part of an answer.
+func failHeld(w http.ResponseWriter, reason string) {
+	if f, ok := w.(interface{ fail(string) }); ok {
+		f.fail(reason)
+	}
 }
 
 // relay copies an upstream response to the client. Event streams are flushed
@@ -110,12 +151,22 @@ func relay(w http.ResponseWriter, resp *http.Response, tr *ledger.AnthropicTrack
 		for {
 			ev, err := events.Next()
 			if err == io.EOF {
+				if !tr.Completed && tr.Error == "" {
+					return errStreamTruncated
+				}
 				return nil
 			}
 			if err != nil {
 				return err
 			}
 			tr.Event(ev.Name, ev.Data)
+			// Once part of the answer has reached the client, another member
+			// can no longer take over: the client would see two answers spliced.
+			if tr.Content {
+				if r, ok := w.(streamReleaser); ok {
+					r.releaseOnContent()
+				}
+			}
 		}
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))

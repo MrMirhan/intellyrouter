@@ -17,6 +17,23 @@ type AnthropicTracker struct {
 	Capture    bool
 	// Advisors lists advisor model calls, which the top-level usage leaves out.
 	Advisors []AdvisorUsage
+	// Completed is set when the stream carried its message_stop event. A stream
+	// that ends without one was cut off, and the text it delivered is only part
+	// of an answer, so the request did not succeed.
+	Completed bool
+	// Content is set when the stream carried a content delta. Once the client
+	// has seen part of an answer the request cannot be retried on another
+	// model: the client would receive two answers spliced together.
+	Content bool
+	// Refused is set on stop_reason "refusal", which the safety classifiers
+	// return with a category and explanation in RefusalDetail.
+	Refused       bool
+	RefusalDetail string
+	// Blocks counts content blocks the upstream produced. A response with no
+	// blocks at all is not an answer: the gateway must not pass it through.
+	// Content blocks on its own does not say "usable", because a refusal with
+	// text still had blocks but no usable answer for Claude Code.
+	Blocks int
 
 	stream *messageBuilder
 	body   []byte
@@ -87,10 +104,17 @@ func (t *AnthropicTracker) Event(name string, data []byte) {
 		if json.Unmarshal(data, &ev) == nil {
 			ev.Message.Usage.applyTo(&t.Usage)
 		}
+	case "message_stop":
+		t.Completed = true
+	case "content_block_start":
+		t.Blocks++
+	case "content_block_delta":
+		t.Content = true
 	case "message_delta":
 		var ev struct {
 			Delta struct {
-				StopReason string `json:"stop_reason"`
+				StopReason  string             `json:"stop_reason"`
+				StopDetails *refusalDetailJSON `json:"stop_details"`
 			} `json:"delta"`
 			Usage anthropicUsage `json:"usage"`
 		}
@@ -99,6 +123,10 @@ func (t *AnthropicTracker) Event(name string, data []byte) {
 			t.applyIterations(ev.Usage.Iterations)
 			if ev.Delta.StopReason != "" {
 				t.StopReason = ev.Delta.StopReason
+				if ev.Delta.StopReason == "refusal" {
+					t.Refused = true
+					t.RefusalDetail = refusalDetail(ev.Delta.StopDetails)
+				}
 			}
 		}
 	case "error":
@@ -123,15 +151,73 @@ func (t *AnthropicTracker) Response(status int, body []byte) {
 	if t.Capture {
 		t.body = body
 	}
+	// A non-streamed body carries no message_stop event, so it is complete on
+	// arrival; only a stream can end early.
+	t.Completed = true
 	var m struct {
-		StopReason string         `json:"stop_reason"`
-		Usage      anthropicUsage `json:"usage"`
+		StopReason  string             `json:"stop_reason"`
+		StopDetails *refusalDetailJSON `json:"stop_details"`
+		Content     []json.RawMessage  `json:"content"`
+		Usage       anthropicUsage     `json:"usage"`
 	}
 	if json.Unmarshal(body, &m) == nil {
 		m.Usage.applyTo(&t.Usage)
 		t.applyIterations(m.Usage.Iterations)
 		t.StopReason = m.StopReason
+		if m.StopReason == "refusal" {
+			t.Refused = true
+			t.RefusalDetail = refusalDetail(m.StopDetails)
+		}
+		t.Blocks = len(m.Content)
+		if t.Blocks > 0 {
+			t.Content = true
+		}
 	}
+}
+
+// refusalDetailJSON is the stop_details object a refusal carries.
+type refusalDetailJSON struct {
+	Type        string `json:"type"`
+	Category    string `json:"category"`
+	Explanation string `json:"explanation"`
+}
+
+// refusalDetail renders the refusal category and explanation for the ledger.
+// Both fields can be null, so an empty result is normal.
+func refusalDetail(d *refusalDetailJSON) string {
+	if d == nil {
+		return ""
+	}
+	switch {
+	case d.Category != "" && d.Explanation != "":
+		return d.Category + ": " + d.Explanation
+	case d.Category != "":
+		return d.Category
+	case d.Explanation != "":
+		return d.Explanation
+	}
+	return ""
+}
+
+// Usable reports whether the upstream response is a complete, non-empty
+// answer that the client should see. A stream that ended without message_stop,
+// a refusal that produced no content, or any response with no content blocks
+// at all is not usable: the gateway should not pass it through, and a combo
+// should try its next member.
+func (t *AnthropicTracker) Usable() bool {
+	if t.Error != "" {
+		return false
+	}
+	if !t.Completed {
+		return false
+	}
+	if t.Blocks == 0 {
+		return false
+	}
+	if t.Refused && !t.Content {
+		return false
+	}
+	return true
 }
 
 // Message returns the response as an Anthropic message JSON, or nil when

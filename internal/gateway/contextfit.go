@@ -188,8 +188,11 @@ func (s *Server) callWithFallback(w http.ResponseWriter, r *http.Request, tiers 
 
 var contextOverflow = regexp.MustCompile(`(?i)prompt is too long|context (?:length|window)|maximum context|too many (?:input )?tokens|input is too long|reduce the length`)
 
-// errorBuffer passes a successful response through and holds an error
-// response, so the caller can retry before the client sees the error.
+// errorBuffer holds responses so the gateway can decide whether to send them
+// to the client. An error response (status >= 400) is held until release().
+// A 2xx response is also held, so the gateway can fail over to another combo
+// member when the upstream returned a truncated stream, a refusal, or any
+// other shape that is not a usable answer.
 type errorBuffer struct {
 	w      http.ResponseWriter
 	rc     *http.ResponseController
@@ -197,6 +200,9 @@ type errorBuffer struct {
 	status int
 	passed bool
 	body   bytes.Buffer
+	// heldGood is the 2xx response body when the upstream wrote one but the
+	// gateway has not yet decided whether to release it.
+	heldGood []byte
 }
 
 func newErrorBuffer(w http.ResponseWriter) *errorBuffer {
@@ -215,11 +221,11 @@ func (b *errorBuffer) WriteHeader(code int) {
 		return
 	}
 	b.status = code
-	if code < http.StatusBadRequest {
-		maps.Copy(b.w.Header(), b.header)
-		b.w.WriteHeader(code)
-		b.passed = true
+	if code >= http.StatusBadRequest {
+		return
 	}
+	// 2xx: hold. releaseGood() sends it; releaseBad() converts it to an error
+	// so the combo can retry the next member.
 }
 
 func (b *errorBuffer) Write(p []byte) (int, error) {
@@ -229,11 +235,53 @@ func (b *errorBuffer) Write(p []byte) (int, error) {
 	if b.passed {
 		return b.w.Write(p)
 	}
-	// Error bodies are short; the limit keeps a broken upstream from filling memory.
-	if b.body.Len() < 1<<20 {
-		b.body.Write(p)
+	if b.status >= http.StatusBadRequest {
+		// Error bodies are short; the limit keeps a broken upstream from filling memory.
+		if b.body.Len() < 1<<20 {
+			b.body.Write(p)
+		}
+		return len(p), nil
 	}
+	// 2xx: append to the held buffer.
+	b.heldGood = append(b.heldGood, p...)
 	return len(p), nil
+}
+
+// releaseOnContent commits a held 2xx response once the first content delta
+// has arrived: the client has seen part of an answer, so no other combo
+// member can take over from here.
+func (b *errorBuffer) releaseOnContent() { b.release() }
+
+// release sends the held response to the client: the 2xx body if the gateway
+// is done trying other members, or the held error otherwise.
+func (b *errorBuffer) release() {
+	if b.passed || b.status == 0 {
+		return
+	}
+	maps.Copy(b.w.Header(), b.header)
+	b.w.WriteHeader(b.status)
+	if b.status < http.StatusBadRequest {
+		_, _ = b.w.Write(b.heldGood)
+	} else {
+		_, _ = b.w.Write(b.body.Bytes())
+	}
+	b.passed = true
+}
+
+// fail turns a held 2xx into an error with the given reason, so retryable()
+// reports true and the combo tries the next member. Call it only while the
+// response is still held (status < 400, not yet released).
+func (b *errorBuffer) fail(reason string) {
+	if b.passed || b.status >= http.StatusBadRequest {
+		return
+	}
+	b.heldGood = nil
+	b.status = http.StatusBadGateway
+	b.header.Set("Content-Type", "application/json")
+	b.body.Reset()
+	b.body.WriteString(`{"type":"error","error":{"type":"api_error","message":"`)
+	b.body.WriteString(reason)
+	b.body.WriteString(`"}}`)
 }
 
 // FlushError lets relay flush a passed-through stream.
@@ -250,10 +298,9 @@ func (b *errorBuffer) overflow() bool {
 		contextOverflow.Match(b.body.Bytes())
 }
 
-// retryable reports whether another model may answer the request that got the
-// held error: the upstream failed, limited the rate, or rejected the key, the
-// model, or the prompt's length. A request the upstream found invalid fails
-// the same way everywhere.
+// retryable reports whether another model may answer the request. The upstream
+// may have failed with a retryable status, or returned a 2xx that the gateway
+// has already converted into an error via releaseBad.
 func (b *errorBuffer) retryable() bool {
 	if b.passed || b.status == 0 {
 		return false
@@ -265,16 +312,6 @@ func (b *errorBuffer) retryable() bool {
 		return false
 	}
 	return b.status > http.StatusBadRequest
-}
-
-// release sends a held error to the client.
-func (b *errorBuffer) release() {
-	if b.passed || b.status == 0 {
-		return
-	}
-	maps.Copy(b.w.Header(), b.header)
-	b.w.WriteHeader(b.status)
-	_, _ = b.w.Write(b.body.Bytes())
 }
 
 func kiloTokens(n int64) string {
