@@ -126,6 +126,47 @@ func removeTool(body []byte, name string) ([]byte, bool, error) {
 	out, err := jsonbytes.SetField(body, "tools", append(append([]byte{'['}, bytes.Join(kept, []byte{','})...), ']'))
 	return out, true, err
 }
+
+// removeToolType removes every tool whose server-tool tag is type, such as
+// advisor_20260120. A provider deployment that predates a newer Claude Code
+// tag rejects the request naming that exact tag; the tag, not the tool name,
+// identifies what to drop.
+func removeToolType(body []byte, typ string) ([]byte, bool, error) {
+	spans, err := jsonbytes.TopLevel(body)
+	if err != nil {
+		return nil, false, err
+	}
+	sp, ok := spans["tools"]
+	if !ok {
+		return body, false, nil
+	}
+	var tools []json.RawMessage
+	if err := json.Unmarshal(body[sp.Start:sp.End], &tools); err != nil {
+		return nil, false, err
+	}
+	kept := make([][]byte, 0, len(tools))
+	for _, tool := range tools {
+		var head struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(tool, &head) == nil && head.Type == typ {
+			continue
+		}
+		kept = append(kept, []byte(tool))
+	}
+	if len(kept) == len(tools) {
+		return body, false, nil
+	}
+	if len(kept) == 0 {
+		out, _, err := jsonbytes.RemoveField(body, "tools")
+		return out, true, err
+	}
+	out, err := jsonbytes.SetField(body, "tools", append(append([]byte{'['}, bytes.Join(kept, []byte{','})...), ']'))
+	return out, true, err
+}
+
+// removeAdvisorTools removes advisor server tools. With a model it removes only
+// the advisor that uses that model.
 func removeAdvisorTools(body []byte, model string) ([]byte, bool, error) {
 	spans, err := jsonbytes.TopLevel(body)
 	if err != nil {

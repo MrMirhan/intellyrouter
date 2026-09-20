@@ -44,6 +44,12 @@ var unsupportedBlock = regexp.MustCompile(`(?i)(?:unsupported|unknown|invalid) c
 // definition is gone, so this drops it and remembers not to send it again.
 var invalidToolSchema = regexp.MustCompile(`(?i)invalid schema for (?:function|tool) '([^']+)'`)
 
+// unsupportedToolVersion matches Anthropic-compatible deployments rejecting a
+// newer Claude Code server tool tag, such as advisor_20260120. The provider
+// names the exact tag, so dropping that one tool definition is safer than
+// turning off every tool or retrying the same invalid request.
+var unsupportedToolVersion = regexp.MustCompile(`(?i)input tag '([^']+)' found using 'type' does not match`)
+
 // adaptationFor maps a 400 error message to the change that avoids it.
 func adaptationFor(message string) (string, bool) {
 	lower := strings.ToLower(message)
@@ -68,6 +74,9 @@ func adaptationFor(message string) (string, bool) {
 	}
 	if m := invalidToolSchema.FindStringSubmatch(message); m != nil {
 		return "tool:" + m[1], true
+	}
+	if m := unsupportedToolVersion.FindStringSubmatch(message); m != nil {
+		return "toolversion:" + m[1], true
 	}
 	if m := extraInputs.FindStringSubmatch(message); m != nil && !essentialFields[m[1]] {
 		return "field:" + m[1], true
@@ -160,6 +169,8 @@ func adapt(body []byte, adaptation string) ([]byte, bool, error) {
 		return jsonbytes.RemoveField(body, strings.TrimPrefix(adaptation, "field:"))
 	case strings.HasPrefix(adaptation, "tool:"):
 		return removeTool(body, strings.TrimPrefix(adaptation, "tool:"))
+	case strings.HasPrefix(adaptation, "toolversion:"):
+		return removeToolType(body, strings.TrimPrefix(adaptation, "toolversion:"))
 	}
 	return body, false, nil
 }

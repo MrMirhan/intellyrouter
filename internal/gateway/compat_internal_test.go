@@ -7,16 +7,17 @@ import (
 
 func TestAdaptationFor(t *testing.T) {
 	cases := map[string]string{
-		"This model does not support the effort parameter.":                                "effort",
-		"adaptive thinking is not supported on this model":                                 "thinking",
-		"role 'system' is not supported on this model":                                     "system_messages",
-		"context_management: Extra inputs are not permitted":                               "field:context_management",
-		"output_config.task_budget: Extra inputs are not permitted":                        "field:output_config",
-		"messages.0.content: Extra inputs are not permitted":                               "",
-		"max_tokens: 200000 > 64000, which is the maximum":                                 "",
-		"`clear_thinking_20251015` strategy requires `thinking` to be enabled or adaptive": "clear_thinking",
+		"This model does not support the effort parameter.":                                                               "effort",
+		"adaptive thinking is not supported on this model":                                                                "thinking",
+		"role 'system' is not supported on this model":                                                                    "system_messages",
+		"context_management: Extra inputs are not permitted":                                                              "field:context_management",
+		"output_config.task_budget: Extra inputs are not permitted":                                                       "field:output_config",
+		"messages.0.content: Extra inputs are not permitted":                                                              "",
+		"max_tokens: 200000 > 64000, which is the maximum":                                                                "",
+		"`clear_thinking_20251015` strategy requires `thinking` to be enabled or adaptive":                                "clear_thinking",
 		`Invalid schema for function 'Artifact': ... is not valid under any of the schemas listed in the 'anyOf' keyword`: "tool:Artifact",
-		"messages.0.content: unsupported content type 'thinking'":                       "block:thinking",
+		"messages.0.content: unsupported content type 'thinking'":                                                         "block:thinking",
+		"messages.0.content.0: Input tag 'advisor_20260120' found using 'type' does not match any of the expected tags":   "toolversion:advisor_20260120",
 	}
 	for msg, want := range cases {
 		got, ok := adaptationFor(msg)
@@ -41,6 +42,8 @@ func TestAdapt(t *testing.T) {
 		{"field:context_management", `{"model":"m","context_management":{"edits":[]}}`, `{"model":"m"}`},
 		{"tool:Artifact", `{"model":"m","tools":[{"name":"Bash","input_schema":{}},{"name":"Artifact","input_schema":{}}]}`,
 			`{"model":"m","tools":[{"name":"Bash","input_schema":{}}]}`},
+		{"toolversion:advisor_20260120", `{"model":"m","tools":[{"name":"Read","type":"read","input_schema":{}},{"name":"Bash","type":"bash_20250124","input_schema":{}},{"type":"advisor_20260120","name":"advisor","input_schema":{}}]}`,
+			`{"model":"m","tools":[{"name":"Read","type":"read","input_schema":{}},{"name":"Bash","type":"bash_20250124","input_schema":{}}]}`},
 		{"tool:Artifact", `{"model":"m","tools":[{"name":"Artifact","input_schema":{}}]}`, `{"model":"m"}`},
 	}
 	for _, c := range cases {
