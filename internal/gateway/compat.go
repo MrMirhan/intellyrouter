@@ -50,6 +50,13 @@ var invalidToolSchema = regexp.MustCompile(`(?i)invalid schema for (?:function|t
 // turning off every tool or retrying the same invalid request.
 var unsupportedToolVersion = regexp.MustCompile(`(?i)input tag '([^']+)' found using 'type' does not match`)
 
+// invalidJSONSchema matches a provider rejecting a tool's schema without
+// naming the tool: "Invalid JSON schema: {"maxLength":1024,...} is not valid
+// under any of the schemas listed in the 'anyOf' keyword". Only the offending
+// fragment identifies it, so the gateway matches the fragment's regex pattern
+// against the tools it sent and drops the one that carries it.
+var invalidJSONSchema = regexp.MustCompile(`(?is)invalid json schema:\s*(\{.*?\})\s+is not valid`)
+
 // adaptationFor maps a 400 error message to the change that avoids it.
 func adaptationFor(message string) (string, bool) {
 	lower := strings.ToLower(message)
@@ -77,6 +84,9 @@ func adaptationFor(message string) (string, bool) {
 	}
 	if m := unsupportedToolVersion.FindStringSubmatch(message); m != nil {
 		return "toolversion:" + m[1], true
+	}
+	if m := invalidJSONSchema.FindStringSubmatch(message); m != nil {
+		return "schema:" + strings.Join(strings.Fields(m[1]), ""), true
 	}
 	if m := extraInputs.FindStringSubmatch(message); m != nil && !essentialFields[m[1]] {
 		return "field:" + m[1], true
@@ -171,6 +181,8 @@ func adapt(body []byte, adaptation string) ([]byte, bool, error) {
 		return removeTool(body, strings.TrimPrefix(adaptation, "tool:"))
 	case strings.HasPrefix(adaptation, "toolversion:"):
 		return removeToolType(body, strings.TrimPrefix(adaptation, "toolversion:"))
+	case strings.HasPrefix(adaptation, "schema:"):
+		return removeToolWithSchema(body, strings.TrimPrefix(adaptation, "schema:"))
 	}
 	return body, false, nil
 }

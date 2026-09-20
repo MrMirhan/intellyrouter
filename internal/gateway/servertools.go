@@ -165,6 +165,67 @@ func removeToolType(body []byte, typ string) ([]byte, bool, error) {
 	return out, true, err
 }
 
+// removeToolWithSchema removes the tool whose input schema contains the
+// fragment a provider rejected. Some providers report an invalid schema
+// without naming the tool, so the fragment itself is the only handle on it.
+// fragment is the provider's JSON with all whitespace removed.
+func removeToolWithSchema(body []byte, fragment string) ([]byte, bool, error) {
+	spans, err := jsonbytes.TopLevel(body)
+	if err != nil {
+		return nil, false, err
+	}
+	sp, ok := spans["tools"]
+	if !ok {
+		return body, false, nil
+	}
+	var tools []json.RawMessage
+	if err := json.Unmarshal(body[sp.Start:sp.End], &tools); err != nil {
+		return nil, false, err
+	}
+	// The provider prints the schema with its own key order, so compare the
+	// set of "key":value pairs rather than the whole object.
+	parts := strings.FieldsFunc(strings.Trim(fragment, "{}"), func(r rune) bool { return r == ',' })
+	if len(parts) == 0 {
+		return body, false, nil
+	}
+	kept := make([][]byte, 0, len(tools))
+	dropped := false
+	for _, tool := range tools {
+		compact := string(compactNoSpace(tool))
+		hit := !dropped
+		for _, p := range parts {
+			if !strings.Contains(compact, p) {
+				hit = false
+				break
+			}
+		}
+		if hit {
+			dropped = true
+			continue
+		}
+		kept = append(kept, []byte(tool))
+	}
+	if !dropped {
+		return body, false, nil
+	}
+	if len(kept) == 0 {
+		out, _, err := jsonbytes.RemoveField(body, "tools")
+		return out, true, err
+	}
+	out, err := jsonbytes.SetField(body, "tools", append(append([]byte{'['}, bytes.Join(kept, []byte{','})...), ']'))
+	return out, true, err
+}
+
+// compactNoSpace returns raw as compact JSON with no whitespace at all, so a
+// provider's reformatted schema fragment can be matched against it.
+func compactNoSpace(raw json.RawMessage) []byte {
+	var buf bytes.Buffer
+	if json.Compact(&buf, raw) != nil {
+		return raw
+	}
+	return buf.Bytes()
+}
+
 // removeAdvisorTools removes advisor server tools. With a model it removes only
 // the advisor that uses that model.
 func removeAdvisorTools(body []byte, model string) ([]byte, bool, error) {

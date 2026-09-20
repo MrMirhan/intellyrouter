@@ -18,6 +18,7 @@ func TestAdaptationFor(t *testing.T) {
 		`Invalid schema for function 'Artifact': ... is not valid under any of the schemas listed in the 'anyOf' keyword`: "tool:Artifact",
 		"messages.0.content: unsupported content type 'thinking'":                                                         "block:thinking",
 		"messages.0.content.0: Input tag 'advisor_20260120' found using 'type' does not match any of the expected tags":   "toolversion:advisor_20260120",
+		`[CommandCode error: Invalid JSON schema: {"maxLength":1024,"minLength":1,"pattern":"^[^\\0]*$","type":"string"} is not valid under any of the schemas listed in the 'anyOf' keyword]`: `schema:{"maxLength":1024,"minLength":1,"pattern":"^[^\\0]*$","type":"string"}`,
 	}
 	for msg, want := range cases {
 		got, ok := adaptationFor(msg)
@@ -44,6 +45,10 @@ func TestAdapt(t *testing.T) {
 			`{"model":"m","tools":[{"name":"Bash","input_schema":{}}]}`},
 		{"toolversion:advisor_20260120", `{"model":"m","tools":[{"name":"Read","type":"read","input_schema":{}},{"name":"Bash","type":"bash_20250124","input_schema":{}},{"type":"advisor_20260120","name":"advisor","input_schema":{}}]}`,
 			`{"model":"m","tools":[{"name":"Read","type":"read","input_schema":{}},{"name":"Bash","type":"bash_20250124","input_schema":{}}]}`},
+		// The provider names no tool, so the rejected schema fragment picks it out.
+		{`schema:{"maxLength":1024,"minLength":1,"type":"string"}`,
+			`{"model":"m","tools":[{"name":"Bash","input_schema":{"properties":{"cmd":{"type":"string"}}}},{"name":"Artifact","input_schema":{"properties":{"title":{"type":"string","minLength":1,"maxLength":1024}}}}]}`,
+			`{"model":"m","tools":[{"name":"Bash","input_schema":{"properties":{"cmd":{"type":"string"}}}}]}`},
 		{"tool:Artifact", `{"model":"m","tools":[{"name":"Artifact","input_schema":{}}]}`, `{"model":"m"}`},
 	}
 	for _, c := range cases {
