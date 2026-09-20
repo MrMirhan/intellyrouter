@@ -192,10 +192,18 @@ func (s *Server) callCombo(w http.ResponseWriter, r *http.Request, t target, cr 
 		}
 		failed = append(failed, fmt.Sprintf("%s returned %d", m.model.ModelID, held.status))
 	}
+	// The last member has nobody to fail over to, but its response still goes
+	// through a buffer: a stream that never produces content reaches the client
+	// as a plain error instead of a 200 it cannot parse. releaseOnContent hands
+	// the buffer over as soon as the first content delta arrives, so a healthy
+	// answer still streams.
 	last := tries[len(tries)-1]
+	held := newErrorBuffer(w)
 	done := s.combos.start(t.model.ID, last.model.ID)
-	defer done()
-	return note(s.call(w, r, last, cr))
+	leg := s.call(held, r, last, cr)
+	done()
+	held.release()
+	return note(leg)
 }
 
 // completeCombo makes a gateway call through a combo and returns the member

@@ -265,6 +265,22 @@ func TestComboRetriesAnEmptyAnswer(t *testing.T) {
 	}
 }
 
+// The last member has nobody to fail over to, but a stream that ends without
+// an answer still must not reach the client as a 200 it cannot parse.
+func TestComboLastMemberTruncatedBecomesAnError(t *testing.T) {
+	e := setupCombo(t)
+	e.truncA.Store(true)
+	must(t, e.store.UpdateCombo(t.Context(), store.Combo{ID: e.combo.ID, Name: "stack", Strategy: store.ComboFallback, Enabled: true,
+		Members: []store.ComboMember{{ModelID: e.models["minimax-a"], Weight: 1}}}))
+	status, out := e.post(t, "claude-combo")
+	if status == http.StatusOK {
+		t.Fatalf("a truncated stream reached the client as 200: %s", out)
+	}
+	if !strings.Contains(out, "message_stop") {
+		t.Fatalf("status %d, error does not name the cause: %s", status, out)
+	}
+}
+
 func TestComboRoundRobin(t *testing.T) {
 	e := setupCombo(t)
 	must(t, e.store.UpdateCombo(t.Context(), store.Combo{ID: e.combo.ID, Name: "stack", Strategy: store.ComboRoundRobin, Enabled: true, Members: e.combo.Members}))
