@@ -188,6 +188,13 @@ func (s *Server) callWithFallback(w http.ResponseWriter, r *http.Request, tiers 
 
 var contextOverflow = regexp.MustCompile(`(?i)prompt is too long|context (?:length|window)|maximum context|too many (?:input )?tokens|input is too long|reduce the length`)
 
+// modelUnavailable matches a provider reporting the model itself as down,
+// such as "Error from provider (Console): Upstream request failed: Model is
+// unavailable." It arrives as a 400 from some providers, so it needs its own
+// check next to contextOverflow: the request is not too big, the model just
+// cannot answer right now, and another combo member usually can.
+var modelUnavailable = regexp.MustCompile(`(?i)model is unavailable`)
+
 // errorBuffer holds responses so the gateway can decide whether to send them
 // to the client. An error response (status >= 400) is held until release().
 // A 2xx response is also held, so the gateway can fail over to another combo
@@ -300,18 +307,22 @@ func (b *errorBuffer) overflow() bool {
 
 // retryable reports whether another model may answer the request. The upstream
 // may have failed with a retryable status, or returned a 2xx that the gateway
-// has already converted into an error via releaseBad.
+// has already converted into an error via fail.
 func (b *errorBuffer) retryable() bool {
 	if b.passed || b.status == 0 {
 		return false
 	}
 	switch b.status {
 	case http.StatusBadRequest, http.StatusRequestEntityTooLarge:
-		return b.overflow()
+		return b.overflow() || b.modelUnavailable()
 	case http.StatusUnprocessableEntity:
 		return false
 	}
 	return b.status > http.StatusBadRequest
+}
+
+func (b *errorBuffer) modelUnavailable() bool {
+	return modelUnavailable.Match(b.body.Bytes())
 }
 
 func kiloTokens(n int64) string {

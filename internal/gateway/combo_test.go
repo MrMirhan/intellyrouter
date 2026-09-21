@@ -31,6 +31,7 @@ type comboEnv struct {
 	truncA  *atomic.Bool
 	refuseA *atomic.Bool
 	emptyA  *atomic.Bool
+	downA   *atomic.Bool
 	models  map[string]int64
 }
 
@@ -47,6 +48,7 @@ func setupCombo(t *testing.T) comboEnv {
 	truncA := &atomic.Bool{}
 	refuseA := &atomic.Bool{}
 	emptyA := &atomic.Bool{}
+	downA := &atomic.Bool{}
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		var body struct {
@@ -60,6 +62,12 @@ func setupCombo(t *testing.T) comboEnv {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)
 			_, _ = io.WriteString(w, `{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}`)
+			return
+		}
+		if body.Model == "minimax-a" && downA.Load() {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, `{"error":{"type":"server_error","message":"Error from provider (Console): Upstream request failed: Model is unavailable."}}`)
 			return
 		}
 		if body.Model == "minimax-a" && truncA.Load() {
@@ -120,7 +128,7 @@ func setupCombo(t *testing.T) comboEnv {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return comboEnv{url: srv.URL, key: key, store: st, combo: combo,
-		failA: failA, truncA: truncA, refuseA: refuseA, emptyA: emptyA,
+		failA: failA, truncA: truncA, refuseA: refuseA, emptyA: emptyA, downA: downA,
 		models: models, calls: func() []string {
 			mu.Lock()
 			defer mu.Unlock()
@@ -256,6 +264,21 @@ func TestComboRetriesARefusalWithNoContent(t *testing.T) {
 func TestComboRetriesAnEmptyAnswer(t *testing.T) {
 	e := setupCombo(t)
 	e.emptyA.Store(true)
+	status, out := e.post(t, "claude-combo")
+	if status != http.StatusOK || !strings.Contains(out, "message_stop") {
+		t.Fatalf("status %d: %s", status, out)
+	}
+	if got := e.calls(); !slices.Equal(got, []string{"minimax-a", "minimax-b"}) {
+		t.Fatalf("upstream calls = %v", got)
+	}
+}
+
+// "Model is unavailable" arrives as a 400 from a transiently-down provider.
+// The combo treats it like any other upstream failure and tries the next
+// member instead of giving the client a hard error.
+func TestComboRetriesAProviderThatReportsModelUnavailable(t *testing.T) {
+	e := setupCombo(t)
+	e.downA.Store(true)
 	status, out := e.post(t, "claude-combo")
 	if status != http.StatusOK || !strings.Contains(out, "message_stop") {
 		t.Fatalf("status %d: %s", status, out)
