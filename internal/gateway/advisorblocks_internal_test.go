@@ -104,7 +104,7 @@ func TestAdaptationForKeepsEssentialBlocks(t *testing.T) {
 func TestCompatLearnsAnUnsupportedBlock(t *testing.T) {
 	c := newCompat()
 	errBody := []byte(`{"type":"error","error":{"type":"invalid_request_error","message":"invalid params, messages.410.content.1: unsupported content type 'advisor_tool_result' (2013)"}}`)
-	out, a, ok := c.learn(7, errBody, []byte(withAdvisorHistory))
+	out, a, _, ok := c.learn(7, errBody, []byte(withAdvisorHistory))
 	if !ok || a != "block:advisor_tool_result" {
 		t.Fatalf("learn = %q, %v", a, ok)
 	}
@@ -117,7 +117,7 @@ func TestCompatLearnsAnUnsupportedBlock(t *testing.T) {
 		t.Fatal("no messages left")
 	}
 	// A second request to the same model applies what was learned.
-	again, applied := c.apply(7, []byte(withAdvisorHistory))
+	again, applied, _ := c.apply(7, []byte(withAdvisorHistory))
 	if len(applied) != 1 || strings.Contains(string(again), "advisor_tool_result") {
 		t.Fatalf("apply = %v", applied)
 	}

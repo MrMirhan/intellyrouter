@@ -52,12 +52,12 @@ func TestAdapt(t *testing.T) {
 		{"tool:Artifact", `{"model":"m","tools":[{"name":"Artifact","input_schema":{}}]}`, `{"model":"m"}`},
 	}
 	for _, c := range cases {
-		got, changed, err := adapt([]byte(c.in), c.adaptation)
+		got, changed, _, err := adapt([]byte(c.in), c.adaptation)
 		if err != nil || !changed || string(got) != c.want || !json.Valid(got) {
 			t.Errorf("adapt(%s, %s) = %s, %v, %v; want %s", c.adaptation, c.in, got, changed, err, c.want)
 		}
 	}
-	if _, changed, _ := adapt([]byte(`{"model":"m"}`), "thinking"); changed {
+	if _, changed, _, _ := adapt([]byte(`{"model":"m"}`), "thinking"); changed {
 		t.Error("adapt reported a change for a feature the request does not use")
 	}
 }

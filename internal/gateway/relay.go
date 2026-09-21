@@ -49,7 +49,7 @@ var skipResponseHeaders = map[string]bool{
 func (s *Server) forward(w http.ResponseWriter, r *http.Request, t target, body []byte, claudeAuth string, capture bool) ledger.Leg {
 	leg := t.newLeg()
 	start := time.Now()
-	body, adapted := s.compat.apply(t.model.ID, body)
+	body, adapted, toolNames := s.compat.apply(t.model.ID, body)
 	var resp *http.Response
 	for {
 		req, err := provider.NewAnthropicRequest(r.Context(), t.config, r.URL.Path, r.URL.RawQuery, body, r.Header, claudeAuth)
@@ -74,20 +74,32 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, t target, body 
 		}
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		resp.Body.Close()
-		next, adaptation, ok := s.compat.learn(t.model.ID, errBody, body)
+		next, adaptation, learnNames, ok := s.compat.learn(t.model.ID, errBody, body)
 		if !ok {
 			resp.Body = io.NopCloser(bytes.NewReader(errBody))
 			break
 		}
 		body, adapted = next, append(adapted, adaptation)
+		if learnNames != nil {
+			toolNames = learnNames
+		}
 	}
 	defer resp.Body.Close()
 	if len(adapted) > 0 {
 		leg.Note = "adapted for " + t.model.ModelID + ": " + strings.Join(adapted, ", ")
 	}
 
+	// A provider with a lower tool-name limit saw shortened names, but the
+	// client only knows the long ones, so the response needs them back.
+	relayTo := w
+	if len(toolNames) > 0 {
+		restore := newNameRestorer(w, toolNames)
+		defer func() { _ = restore.Flush() }()
+		relayTo = &restoringWriter{ResponseWriter: w, body: restore}
+	}
+
 	tr := ledger.AnthropicTracker{Capture: capture}
-	relayErr := relay(w, resp, &tr)
+	relayErr := relay(relayTo, resp, &tr)
 	leg.Latency = time.Since(start)
 	if t.config.Type == provider.AnthropicSubscription {
 		s.saveRateLimits(context.WithoutCancel(r.Context()), resp.Header)

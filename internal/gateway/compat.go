@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -50,6 +51,12 @@ var invalidToolSchema = regexp.MustCompile(`(?i)invalid schema for (?:function|t
 // turning off every tool or retrying the same invalid request.
 var unsupportedToolVersion = regexp.MustCompile(`(?i)input tag '([^']+)' found using 'type' does not match`)
 
+// toolNameLimit matches a provider that caps tool names below Anthropic's own
+// limit, such as "`name` must be at most 64 characters, got 65". Claude Code's
+// MCP tool names are "mcp__<server>__<tool>" and routinely pass 64, so the
+// gateway shortens them for that model instead of dropping the tools.
+var toolNameLimit = regexp.MustCompile(`(?i)` + "`?name`?" + ` must be at most (\d+) characters`)
+
 // invalidJSONSchema matches a provider rejecting a tool's schema without
 // naming the tool: "Invalid JSON schema: {"maxLength":1024,...} is not valid
 // under any of the schemas listed in the 'anyOf' keyword". Only the offending
@@ -88,6 +95,9 @@ func adaptationFor(message string) (string, bool) {
 	if m := invalidJSONSchema.FindStringSubmatch(message); m != nil {
 		return "schema:" + strings.Join(strings.Fields(m[1]), ""), true
 	}
+	if m := toolNameLimit.FindStringSubmatch(message); m != nil {
+		return "namelimit:" + m[1], true
+	}
 	if m := extraInputs.FindStringSubmatch(message); m != nil && !essentialFields[m[1]] {
 		return "field:" + m[1], true
 	}
@@ -110,81 +120,111 @@ func newCompat() *compat {
 	return &compat{byModel: make(map[int64][]string)}
 }
 
-// apply makes the changes already learned for the model.
-func (c *compat) apply(modelID int64, body []byte) ([]byte, []string) {
+// apply makes the changes already learned for the model. The third result
+// maps shortened tool names back to the originals, so the response can carry
+// the names the client knows; it is nil when no name was shortened.
+func (c *compat) apply(modelID int64, body []byte) ([]byte, []string, map[string]string) {
 	c.mu.Lock()
 	known := slices.Clone(c.byModel[modelID])
 	c.mu.Unlock()
 	var applied []string
+	var names map[string]string
 	for _, a := range known {
-		if out, changed, err := adapt(body, a); err == nil && changed {
-			body, applied = out, append(applied, a)
+		out, changed, back, err := adapt(body, a)
+		if err != nil || !changed {
+			continue
+		}
+		body, applied = out, append(applied, a)
+		if back != nil {
+			names = back
 		}
 	}
-	return body, applied
+	return body, applied, names
 }
 
 // learn reads a 400 response body and returns the request body without the
 // rejected feature. It returns false when the error is not a known feature
-// rejection or the request does not use that feature.
-func (c *compat) learn(modelID int64, errBody, body []byte) ([]byte, string, bool) {
+// rejection or the request does not use that feature. When the adaptation
+// shortens tool names, the third result maps them back so the response can
+// carry the originals.
+func (c *compat) learn(modelID int64, errBody, body []byte) ([]byte, string, map[string]string, bool) {
 	var e struct {
 		Error struct {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
 	if json.Unmarshal(errBody, &e) != nil {
-		return nil, "", false
+		return nil, "", nil, false
 	}
 	a, ok := adaptationFor(e.Error.Message)
 	if !ok {
-		return nil, "", false
+		return nil, "", nil, false
 	}
-	out, changed, err := adapt(body, a)
+	out, changed, names, err := adapt(body, a)
 	if err != nil || !changed {
-		return nil, "", false
+		return nil, "", nil, false
 	}
 	c.mu.Lock()
 	if !slices.Contains(c.byModel[modelID], a) {
 		c.byModel[modelID] = append(c.byModel[modelID], a)
 	}
 	c.mu.Unlock()
-	return out, a, true
+	return out, a, names, true
 }
 
-func adapt(body []byte, adaptation string) ([]byte, bool, error) {
+// adapt makes one learned change to body. The third result maps shortened
+// tool names back to the originals; it is nil for every adaptation but
+// "namelimit:<n>".
+func adapt(body []byte, adaptation string) ([]byte, bool, map[string]string, error) {
 	switch {
 	case adaptation == "effort":
-		return dropEffort(body)
+		out, changed, err := dropEffort(body)
+		return out, changed, nil, err
 	case adaptation == "thinking":
 		out, removed, err := jsonbytes.RemoveField(body, "thinking")
 		if err != nil {
-			return nil, false, err
+			return nil, false, nil, err
 		}
 		// Thinking-clearing context edits are invalid once thinking is off.
 		out, cleared, err := dropClearThinking(out)
-		return out, removed || cleared, err
+		return out, removed || cleared, nil, err
 	case adaptation == "clear_thinking":
-		return dropClearThinking(body)
+		out, changed, err := dropClearThinking(body)
+		return out, changed, nil, err
 	case adaptation == "system_messages":
-		return systemMessagesToUser(body)
+		out, changed, err := systemMessagesToUser(body)
+		return out, changed, nil, err
 	case adaptation == "advisor":
-		return removeAdvisorTools(body, "")
+		out, changed, err := removeAdvisorTools(body, "")
+		return out, changed, nil, err
 	case strings.HasPrefix(adaptation, "advisor:"):
-		return removeAdvisorTools(body, strings.TrimPrefix(adaptation, "advisor:"))
+		out, changed, err := removeAdvisorTools(body, strings.TrimPrefix(adaptation, "advisor:"))
+		return out, changed, nil, err
 	case strings.HasPrefix(adaptation, "block:"):
 		kind := strings.TrimPrefix(adaptation, "block:")
-		return removeContentBlocks(body, func(t string) bool { return t == kind })
+		out, changed, err := removeContentBlocks(body, func(t string) bool { return t == kind })
+		return out, changed, nil, err
 	case strings.HasPrefix(adaptation, "field:"):
-		return jsonbytes.RemoveField(body, strings.TrimPrefix(adaptation, "field:"))
+		out, changed, err := jsonbytes.RemoveField(body, strings.TrimPrefix(adaptation, "field:"))
+		return out, changed, nil, err
 	case strings.HasPrefix(adaptation, "tool:"):
-		return removeTool(body, strings.TrimPrefix(adaptation, "tool:"))
+		out, changed, err := removeTool(body, strings.TrimPrefix(adaptation, "tool:"))
+		return out, changed, nil, err
 	case strings.HasPrefix(adaptation, "toolversion:"):
-		return removeToolType(body, strings.TrimPrefix(adaptation, "toolversion:"))
+		out, changed, err := removeToolType(body, strings.TrimPrefix(adaptation, "toolversion:"))
+		return out, changed, nil, err
 	case strings.HasPrefix(adaptation, "schema:"):
-		return removeToolWithSchema(body, strings.TrimPrefix(adaptation, "schema:"))
+		out, changed, err := removeToolWithSchema(body, strings.TrimPrefix(adaptation, "schema:"))
+		return out, changed, nil, err
+	case strings.HasPrefix(adaptation, "namelimit:"):
+		limit, err := strconv.Atoi(strings.TrimPrefix(adaptation, "namelimit:"))
+		if err != nil {
+			return body, false, nil, nil
+		}
+		out, names, err := shortenToolNames(body, limit)
+		return out, len(names) > 0, names, err
 	}
-	return body, false, nil
+	return body, false, nil, nil
 }
 
 func dropEffort(body []byte) ([]byte, bool, error) {
