@@ -32,6 +32,7 @@ type comboEnv struct {
 	refuseA *atomic.Bool
 	emptyA  *atomic.Bool
 	downA   *atomic.Bool
+	oopsA   *atomic.Bool
 	models  map[string]int64
 }
 
@@ -49,6 +50,7 @@ func setupCombo(t *testing.T) comboEnv {
 	refuseA := &atomic.Bool{}
 	emptyA := &atomic.Bool{}
 	downA := &atomic.Bool{}
+	oopsA := &atomic.Bool{}
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		var body struct {
@@ -68,6 +70,14 @@ func setupCombo(t *testing.T) comboEnv {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
 			_, _ = io.WriteString(w, `{"error":{"type":"server_error","message":"Error from provider (Console): Upstream request failed: Model is unavailable."}}`)
+			return
+		}
+		if body.Model == "minimax-a" && oopsA.Load() {
+			// A generic provider-side failure with no useful message. The body
+			// type is the only thing that says the request was fine.
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, `{"type":"error","error":{"type":"server_error","message":"An error occurred while processing your request."}}`)
 			return
 		}
 		if body.Model == "minimax-a" && truncA.Load() {
@@ -128,7 +138,7 @@ func setupCombo(t *testing.T) comboEnv {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return comboEnv{url: srv.URL, key: key, store: st, combo: combo,
-		failA: failA, truncA: truncA, refuseA: refuseA, emptyA: emptyA, downA: downA,
+		failA: failA, truncA: truncA, refuseA: refuseA, emptyA: emptyA, downA: downA, oopsA: oopsA,
 		models: models, calls: func() []string {
 			mu.Lock()
 			defer mu.Unlock()
@@ -279,6 +289,21 @@ func TestComboRetriesAnEmptyAnswer(t *testing.T) {
 func TestComboRetriesAProviderThatReportsModelUnavailable(t *testing.T) {
 	e := setupCombo(t)
 	e.downA.Store(true)
+	status, out := e.post(t, "claude-combo")
+	if status != http.StatusOK || !strings.Contains(out, "message_stop") {
+		t.Fatalf("status %d: %s", status, out)
+	}
+	if got := e.calls(); !slices.Equal(got, []string{"minimax-a", "minimax-b"}) {
+		t.Fatalf("upstream calls = %v", got)
+	}
+}
+
+// A provider whose own machinery failed answers 400 with a generic message
+// and `error.type` of "server_error". Nothing in the text says the model is
+// down, so the body type is what tells the combo to try the next member.
+func TestComboRetriesAProviderServerError(t *testing.T) {
+	e := setupCombo(t)
+	e.oopsA.Store(true)
 	status, out := e.post(t, "claude-combo")
 	if status != http.StatusOK || !strings.Contains(out, "message_stop") {
 		t.Fatalf("status %d: %s", status, out)

@@ -3,6 +3,7 @@ package gateway
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"net/http"
@@ -314,7 +315,7 @@ func (b *errorBuffer) retryable() bool {
 	}
 	switch b.status {
 	case http.StatusBadRequest, http.StatusRequestEntityTooLarge:
-		return b.overflow() || b.modelUnavailable()
+		return b.overflow() || b.modelUnavailable() || b.providerServerError()
 	case http.StatusUnprocessableEntity:
 		return false
 	}
@@ -323,6 +324,22 @@ func (b *errorBuffer) retryable() bool {
 
 func (b *errorBuffer) modelUnavailable() bool {
 	return modelUnavailable.Match(b.body.Bytes())
+}
+
+// providerServerError reads the error body as JSON and reports whether its
+// `error.type` says the failure was the provider's own, not a problem with
+// the request. Such a body can carry a 400 status that no other rule matches.
+func (b *errorBuffer) providerServerError() bool {
+	var body struct {
+		Type  string `json:"type"`
+		Error struct {
+			Type string `json:"type"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(b.body.Bytes(), &body) != nil {
+		return false
+	}
+	return body.Type == "server_error" || body.Error.Type == "server_error"
 }
 
 func kiloTokens(n int64) string {
