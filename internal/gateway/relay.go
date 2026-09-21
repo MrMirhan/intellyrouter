@@ -117,6 +117,10 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, t target, body 
 		leg.Status, leg.Error = ledger.StatusError, relayErr.Error()
 	case resp.StatusCode >= 300 || tr.Error != "":
 		leg.Status, leg.Error = ledger.StatusUpstreamError, tr.Error
+		// A 200 stream that ends with an `error` event should not reach the
+		// client as a half-broken answer. If the buffer is still held, turn
+		// the held 2xx into a 502 so the combo retries the next member.
+		failHeld(w, leg.Error)
 	case !tr.Usable():
 		// The upstream returned a 2xx that is not an answer: truncated stream,
 		// empty body, or a refusal with no content. Combo retries on the next

@@ -86,6 +86,21 @@ func (e anthropicError) String() string {
 	return e.Error.Type + ": " + e.Error.Message
 }
 
+// visibleDelta reports whether a streamed delta can commit a response to the
+// client. Thinking and signature deltas must remain held: a model can still
+// emit an error before it produces visible text, and the combo can then retry.
+func visibleDelta(data []byte) bool {
+	var d struct {
+		Delta struct {
+			Type string `json:"type"`
+		} `json:"delta"`
+	}
+	if json.Unmarshal(data, &d) != nil {
+		return true
+	}
+	return d.Delta.Type != "thinking_delta" && d.Delta.Type != "signature_delta"
+}
+
 // Event records one stream event.
 func (t *AnthropicTracker) Event(name string, data []byte) {
 	if t.Capture {
@@ -109,7 +124,7 @@ func (t *AnthropicTracker) Event(name string, data []byte) {
 	case "content_block_start":
 		t.Blocks++
 	case "content_block_delta":
-		t.Content = true
+		t.Content = t.Content || visibleDelta(data)
 	case "message_delta":
 		var ev struct {
 			Delta struct {

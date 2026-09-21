@@ -33,6 +33,7 @@ type comboEnv struct {
 	emptyA  *atomic.Bool
 	downA   *atomic.Bool
 	oopsA   *atomic.Bool
+	thinkA  *atomic.Bool
 	models  map[string]int64
 }
 
@@ -51,6 +52,7 @@ func setupCombo(t *testing.T) comboEnv {
 	emptyA := &atomic.Bool{}
 	downA := &atomic.Bool{}
 	oopsA := &atomic.Bool{}
+	thinkA := &atomic.Bool{}
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		var body struct {
@@ -78,6 +80,19 @@ func setupCombo(t *testing.T) comboEnv {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
 			_, _ = io.WriteString(w, `{"type":"error","error":{"type":"server_error","message":"An error occurred while processing your request."}}`)
+			return
+		}
+		if body.Model == "minimax-a" && thinkA.Load() {
+			// A model that thinks for a while then errors mid-stream. The
+			// thinking deltas must not commit the held response, so the combo
+			// can still fail over when the error event arrives.
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w,
+				"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"think\",\"role\":\"assistant\",\"model\":\"minimax-a\",\"content\":[],\"stop_reason\":null,\"usage\":{\"input_tokens\":10,\"output_tokens\":0}}}\n\n"+
+					"event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"text\":\"\"}}\n\n"+
+					"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"I need to think about this carefully.\"}}\n\n"+
+					"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" More thoughts follow.\"}}\n\n"+
+					"event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"server_error\",\"message\":\"Error from provider (Console): Upstream request failed: An error occurred while processing your request. Please contact us through our help center at help.openai.com if the error persists.\"}}\n\n")
 			return
 		}
 		if body.Model == "minimax-a" && truncA.Load() {
@@ -138,7 +153,7 @@ func setupCombo(t *testing.T) comboEnv {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return comboEnv{url: srv.URL, key: key, store: st, combo: combo,
-		failA: failA, truncA: truncA, refuseA: refuseA, emptyA: emptyA, downA: downA, oopsA: oopsA,
+		failA: failA, truncA: truncA, refuseA: refuseA, emptyA: emptyA, downA: downA, oopsA: oopsA, thinkA: thinkA,
 		models: models, calls: func() []string {
 			mu.Lock()
 			defer mu.Unlock()
@@ -289,6 +304,22 @@ func TestComboRetriesAnEmptyAnswer(t *testing.T) {
 func TestComboRetriesAProviderThatReportsModelUnavailable(t *testing.T) {
 	e := setupCombo(t)
 	e.downA.Store(true)
+	status, out := e.post(t, "claude-combo")
+	if status != http.StatusOK || !strings.Contains(out, "message_stop") {
+		t.Fatalf("status %d: %s", status, out)
+	}
+	if got := e.calls(); !slices.Equal(got, []string{"minimax-a", "minimax-b"}) {
+		t.Fatalf("upstream calls = %v", got)
+	}
+}
+
+// A model that thinks for a while then errors mid-stream with an `error`
+// event must still let the combo fail over. Thinking deltas carry no
+// user-visible text, so they must not commit the held response before the
+// error arrives.
+func TestComboRetriesWhenThinkingIsFollowedByError(t *testing.T) {
+	e := setupCombo(t)
+	e.thinkA.Store(true)
 	status, out := e.post(t, "claude-combo")
 	if status != http.StatusOK || !strings.Contains(out, "message_stop") {
 		t.Fatalf("status %d: %s", status, out)
