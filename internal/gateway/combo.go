@@ -183,6 +183,9 @@ func (s *Server) callCombo(w http.ResponseWriter, r *http.Request, t target, cr 
 	}
 	for _, m := range tries[:len(tries)-1] {
 		held := newErrorBuffer(w)
+		// This member can fail over, so a slow upstream that holds the buffer
+		// with no visible content must not keep the client waiting.
+		held.armHoldWatchdog()
 		done := s.combos.start(t.model.ID, m.model.ID)
 		leg := s.call(held, r, m, cr)
 		done()

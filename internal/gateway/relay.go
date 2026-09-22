@@ -9,6 +9,8 @@ import (
 	"mime"
 	"net/http"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/MrMirhan/intellyrouter/internal/ledger"
@@ -19,16 +21,37 @@ import (
 
 const maxResponseBytes = 64 << 20
 
+// MaxComboHold caps how long a held writer may stream without producing any
+// visible content. A 9router leg that thinks slowly, or a wrapper that
+// buffers the whole reply, can otherwise hold the buffer for minutes while
+// the client sees nothing. Exported so tests can shorten it.
+var MaxComboHold = 60 * time.Second
+
 // errStreamTruncated reports a stream that ended without its message_stop
 // event. The client saw part of an answer and has no way to know it was cut
 // off; the combo moves to the next member when no content reached it.
 var errStreamTruncated = errors.New("upstream stream ended without message_stop")
+
+// errStreamStalled reports a stream the watchdog closed because the held
+// writer produced no visible content before MaxComboHold. Treated like
+// truncation: the combo moves to the next member.
+var errStreamStalled = errors.New("upstream produced no answer before the hold deadline")
 
 // streamReleaser is implemented by writers that hold a 2xx response while the
 // upstream streams it. The relay calls releaseOnContent when the first
 // content delta arrives, so the held bytes are flushed and subsequent bytes
 // are passed straight through.
 type streamReleaser interface{ releaseOnContent() }
+
+// streamFailer lets the relay convert a held 2xx into a retryable error when
+// the upstream stalls past the hold deadline, so the combo can try the next
+// member instead of letting the client wait in silence.
+type streamFailer interface{ fail(string) }
+
+// streamArmer reports whether the held writer wants the relay to fail over
+// when the upstream produces no visible content within MaxComboHold. Combo
+// non-last members arm it; the last member does not.
+type streamArmer interface{ armed() bool }
 
 var skipResponseHeaders = map[string]bool{
 	"Connection":         true,
@@ -110,9 +133,10 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, t target, body 
 	switch {
 	case relayErr != nil && r.Context().Err() != nil:
 		leg.Status = ledger.StatusCanceled
-	case errors.Is(relayErr, errStreamTruncated):
-		leg.Status, leg.Error = ledger.StatusUpstreamError, relayErr.Error()
-		failHeld(w, relayErr.Error())
+	case errors.Is(relayErr, errStreamTruncated), errors.Is(relayErr, errStreamStalled):
+		reason := relayErr.Error()
+		leg.Status, leg.Error = ledger.StatusUpstreamError, reason
+		failHeld(w, reason)
 	case relayErr != nil:
 		leg.Status, leg.Error = ledger.StatusError, relayErr.Error()
 	case resp.StatusCode >= 300 || tr.Error != "":
@@ -155,6 +179,10 @@ func failHeld(w http.ResponseWriter, reason string) {
 
 // relay copies an upstream response to the client. Event streams are flushed
 // as bytes arrive, pings included, and usage is read from the same bytes.
+// When the writer holds the response (a combo member or a tier under the
+// context fitter) the relay arms a watchdog: if no visible content has
+// reached the client within maxComboHold, the body is closed so the read
+// unblocks and the held response is converted to a retryable 502.
 func relay(w http.ResponseWriter, resp *http.Response, tr *ledger.AnthropicTracker) error {
 	for name, values := range resp.Header {
 		if !skipResponseHeaders[name] {
@@ -162,36 +190,78 @@ func relay(w http.ResponseWriter, resp *http.Response, tr *ledger.AnthropicTrack
 		}
 	}
 	w.WriteHeader(resp.StatusCode)
-	if resp.StatusCode == http.StatusOK && isEventStream(resp.Header) {
-		events := sse.NewReader(io.TeeReader(resp.Body, flushWriter{w: w, rc: http.NewResponseController(w)}))
-		for {
-			ev, err := events.Next()
-			if err == io.EOF {
-				if !tr.Completed && tr.Error == "" {
-					return errStreamTruncated
-				}
-				return nil
-			}
-			if err != nil {
-				return err
-			}
-			tr.Event(ev.Name, ev.Data)
-			// Once part of the answer has reached the client, another member
-			// can no longer take over: the client would see two answers spliced.
-			if tr.Content {
-				if r, ok := w.(streamReleaser); ok {
-					r.releaseOnContent()
-				}
-			}
+	if resp.StatusCode != http.StatusOK || !isEventStream(resp.Header) {
+		b, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+		if err != nil {
+			return err
 		}
-	}
-	b, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
-	if err != nil {
+		tr.Response(resp.StatusCode, b)
+		_, err = w.Write(b)
 		return err
 	}
-	tr.Response(resp.StatusCode, b)
-	_, err = w.Write(b)
-	return err
+	events := sse.NewReader(io.TeeReader(resp.Body, flushWriter{w: w, rc: http.NewResponseController(w)}))
+
+	// Idle watchdog for held writers. The timer only sets an atomic flag and
+	// asks the body to close: the synchronous read loop below sees both, the
+	// watchdog never touches the held buffer or the relay loop, so there are
+	// no shared-state races. Only combo non-last members arm it; the last
+	// member has nobody to fail over to, so a slow-but-eventual answer must
+	// not be cut off.
+	var stalled atomic.Bool
+	var closeOnce sync.Once
+	closeBody := func() { closeOnce.Do(func() { resp.Body.Close() }) }
+	var timer *time.Timer
+	armed := false
+	if a, ok := w.(streamArmer); ok && a.armed() {
+		armed = true
+		timer = time.AfterFunc(MaxComboHold, func() {
+			stalled.Store(true)
+			closeBody()
+		})
+	}
+	defer func() {
+		if timer != nil {
+			timer.Stop()
+		}
+	}()
+
+	for {
+		ev, err := events.Next()
+		if err == io.EOF {
+			if !tr.Completed && tr.Error == "" {
+				if stalled.Load() {
+					return errStreamStalled
+				}
+				return errStreamTruncated
+			}
+			return nil
+		}
+		if err != nil {
+			if stalled.Load() {
+				return errStreamStalled
+			}
+			return err
+		}
+		tr.Event(ev.Name, ev.Data)
+		// Once part of the answer has reached the client, another member can
+		// no longer take over: the client would see two answers spliced.
+		// tr.Content only turns true on a visible (text/tool) delta — the
+		// tracker gates thinking and signature deltas out — so a thinking-
+		// only stream that errors mid-flight still fails over.
+		if tr.Content {
+			if r, ok := w.(streamReleaser); ok {
+				r.releaseOnContent()
+			}
+			if timer != nil {
+				timer.Stop()
+				timer = nil
+			}
+		} else if armed && timer != nil {
+			// Each event resets the idle deadline so a long-thinking stream
+			// keeps its buffer alive as long as events keep arriving.
+			timer.Reset(MaxComboHold)
+		}
+	}
 }
 
 // saveRateLimits keeps the latest subscription rate-limit headers for the dashboard.

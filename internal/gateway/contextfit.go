@@ -211,11 +211,24 @@ type errorBuffer struct {
 	// heldGood is the 2xx response body when the upstream wrote one but the
 	// gateway has not yet decided whether to release it.
 	heldGood []byte
+	// watchdogArmed marks a held buffer whose caller wants the relay to fail
+	// over when the upstream produces no visible content for maxComboHold.
+	watchdogArmed bool
 }
 
 func newErrorBuffer(w http.ResponseWriter) *errorBuffer {
 	return &errorBuffer{w: w, rc: http.NewResponseController(w), header: make(http.Header)}
 }
+
+// armHoldWatchdog asks the relay to fail over when the held buffer has not
+// released any visible content within maxComboHold. Combo non-last members
+// use it; the last member has nobody to fail over to, so a slow-but-eventual
+// answer must not be cut off.
+func (b *errorBuffer) armHoldWatchdog() { b.watchdogArmed = true }
+
+// armed is the getter the relay uses to decide whether to arm the hold
+// watchdog on this writer.
+func (b *errorBuffer) armed() bool { return b.watchdogArmed }
 
 func (b *errorBuffer) Header() http.Header {
 	if b.passed {

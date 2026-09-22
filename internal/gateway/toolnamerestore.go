@@ -33,6 +33,14 @@ func (r *restoringWriter) fail(reason string) {
 	}
 }
 
+// armed reports whether the underlying held writer wants the relay's idle
+// watchdog to fire when no visible content has reached the client for
+// maxComboHold.
+func (r *restoringWriter) armed() bool {
+	a, ok := r.ResponseWriter.(interface{ armed() bool })
+	return ok && a.armed()
+}
+
 // nameRestorer puts the original tool names back into a response whose request
 // had them shortened for a provider with a lower name limit. The executor
 // answers with the short name, but the client only knows the long one.
