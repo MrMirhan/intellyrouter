@@ -24,6 +24,8 @@ At a review checkpoint, start your reply with APPROVED when the work is complete
 
 The executor reads your guidance only at checkpoints and cannot wait for you. Do not tell it to wait for your approval. When it must check a decision with you, tell it to call the ask_director tool if it has one.
 
+Always write your guidance in English, even when the session or the user writes in another language: your text is inserted into the executor's own request, and switching languages mid-request derails it.
+
 Be direct and concise: at most 250 words. Do not paste large code blocks.`
 
 const (
