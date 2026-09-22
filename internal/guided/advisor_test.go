@@ -45,7 +45,7 @@ func TestInjectAdvice(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(string(out), earlier+`,{"type":"text","text":"`) ||
-		!strings.Contains(string(out), `Earlier in this task you asked the advisor: Where?\n\nIn calc.go.`) {
+		!strings.Contains(string(out), `Earlier in this task you asked an advisor model: Where?\n\nIts answer:\nIn calc.go.`) {
 		t.Fatalf("out = %s", out)
 	}
 }

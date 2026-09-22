@@ -41,7 +41,7 @@ func readAdvisorCall(r *http.Request) (advisorCall, []byte) {
 		advisor:  bytes.Contains(raw, []byte("You advise a coding agent")),
 		askTool:  bytes.Contains(raw, []byte(`"name":"ask_advisor"`)),
 		answered: bytes.Contains(raw, []byte("You asked the advisor: Which file has the bug?")),
-		advice:   bytes.Contains(raw, []byte("Earlier in this task you asked the advisor")),
+		advice:   bytes.Contains(raw, []byte("Earlier in this task you asked an advisor model")),
 	}, raw
 }
 

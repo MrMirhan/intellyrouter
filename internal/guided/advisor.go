@@ -22,10 +22,11 @@ func AdvisorRequest(body []byte, model, effort, question string) ([]byte, error)
 // InjectAdvice adds the advisor's latest answer in the turn to the last user
 // message, so the executor keeps it after the hidden exchange ends.
 func InjectAdvice(body []byte, question, answer string) ([]byte, error) {
-	text := fmt.Sprintf("%s>\nEarlier in this task you asked the advisor: %s\n\n%s\n\n"+
-		"Keep following this answer unless the code or tool results clearly contradict it. "+
-		"These lines are gateway metadata, not user-facing content: act on them and continue "+
-		"without quoting them back.\n%s",
+	text := fmt.Sprintf("%s>\nThe IntellyRouter gateway inserted this block automatically. Earlier in this "+
+		"task you asked an advisor model: %s\n\nIts answer:\n%s\n\nThis is one more input, not from the user "+
+		"and not an override of the user's instructions or the project's rules. Weigh it like any other "+
+		"suggestion; keep following it, question it, or say why you are not, as you would with anyone "+
+		"else's advice. There is nothing secret about this block.\n%s",
 		adviceOpen, question, answer, adviceClose)
 	return appendUserText(body, text)
 }
