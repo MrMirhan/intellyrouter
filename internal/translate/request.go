@@ -19,6 +19,35 @@ type Options struct {
 	ThoughtSignature func(toolUseID string) string
 }
 
+// openAIToolCap keeps Codex-friendly tool lists small. Some upstreams (notably
+// 9router's Codex backend) answer an OpenAI Responses call with an empty body
+// when the tool count is huge, which is what Claude Code sees as a 36-second
+// wait and then no response.
+const openAIToolCap = 64
+
+// dedupeOpenAITools drops tools with the same name. HEADROOM between Claude
+// Code and the gateway has been seen duplicating the full Claude tool set on
+// every turn, blowing a normal 20-tool list up past a thousand. The OpenAI
+// endpoint then refuses to answer.
+func dedupeOpenAITools(in []anthropicTool) []openAITool {
+	seen := make(map[string]bool, len(in))
+	out := make([]openAITool, 0, len(in))
+	for _, t := range in {
+		if t.Type != "" && t.Type != "custom" {
+			continue
+		}
+		if seen[t.Name] {
+			continue
+		}
+		seen[t.Name] = true
+		out = append(out, openAITool{
+			Type:     "function",
+			Function: openAIFunction{Name: t.Name, Description: t.Description, Parameters: t.InputSchema},
+		})
+	}
+	return out
+}
+
 type anthropicRequest struct {
 	MaxTokens     *int                 `json:"max_tokens"`
 	System        json.RawMessage      `json:"system"`
@@ -179,14 +208,9 @@ func Request(body []byte, opts Options) ([]byte, error) {
 		out.Messages = append(out.Messages, msgs...)
 	}
 
-	for _, t := range in.Tools {
-		if t.Type != "" && t.Type != "custom" {
-			continue
-		}
-		out.Tools = append(out.Tools, openAITool{
-			Type:     "function",
-			Function: openAIFunction{Name: t.Name, Description: t.Description, Parameters: t.InputSchema},
-		})
+	out.Tools = dedupeOpenAITools(in.Tools)
+	if len(out.Tools) > openAIToolCap {
+		out.Tools = out.Tools[:openAIToolCap]
 	}
 	if tc := in.ToolChoice; tc != nil && len(out.Tools) > 0 {
 		switch tc.Type {
