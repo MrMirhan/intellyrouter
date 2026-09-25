@@ -137,11 +137,11 @@ function Block({ block }: { block: ContentBlock }) {
   }
 }
 
-export function ContentBlocks({ content }: { content: string | ContentBlock[] }) {
+export function ContentBlocks({ content }: { content: string | ContentBlock[] | null | undefined }) {
   if (typeof content === "string") {
     return <PlainText text={content} />
   }
-  if (content.length === 0) {
+  if (!Array.isArray(content) || content.length === 0) {
     return <p className="text-sm text-muted-foreground">No content.</p>
   }
   return (

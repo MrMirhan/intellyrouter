@@ -17,6 +17,7 @@ import (
 	"github.com/MrMirhan/intellyrouter/internal/provider"
 	"github.com/MrMirhan/intellyrouter/internal/sse"
 	"github.com/MrMirhan/intellyrouter/internal/store"
+	"github.com/MrMirhan/intellyrouter/internal/translate"
 )
 
 const maxResponseBytes = 64 << 20
@@ -122,7 +123,7 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, t target, body 
 	}
 
 	tr := ledger.AnthropicTracker{Capture: capture}
-	relayErr := relay(relayTo, resp, &tr)
+	relayErr := relay(relayTo, resp, &tr, t.model.ModelID)
 	leg.Latency = time.Since(start)
 	if t.config.Type == provider.AnthropicSubscription {
 		s.saveRateLimits(context.WithoutCancel(r.Context()), resp.Header)
@@ -183,22 +184,31 @@ func failHeld(w http.ResponseWriter, reason string) {
 // context fitter) the relay arms a watchdog: if no visible content has
 // reached the client within maxComboHold, the body is closed so the read
 // unblocks and the held response is converted to a retryable 502.
-func relay(w http.ResponseWriter, resp *http.Response, tr *ledger.AnthropicTracker) error {
+func relay(w http.ResponseWriter, resp *http.Response, tr *ledger.AnthropicTracker, model string) error {
 	for name, values := range resp.Header {
 		if !skipResponseHeaders[name] {
 			w.Header()[name] = values
 		}
 	}
-	w.WriteHeader(resp.StatusCode)
 	if resp.StatusCode != http.StatusOK || !isEventStream(resp.Header) {
 		b, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 		if err != nil {
 			return err
 		}
+		// Some Anthropic-shaped endpoints answer a non-streamed request in the
+		// OpenAI Chat Completions shape instead. Response rejects a body without
+		// choices, so a real Anthropic message is left untouched.
+		if resp.StatusCode == http.StatusOK {
+			if conv, cerr := translate.Response(b, model); cerr == nil {
+				b = conv
+			}
+		}
+		w.WriteHeader(resp.StatusCode)
 		tr.Response(resp.StatusCode, b)
 		_, err = w.Write(b)
 		return err
 	}
+	w.WriteHeader(resp.StatusCode)
 	events := sse.NewReader(io.TeeReader(resp.Body, flushWriter{w: w, rc: http.NewResponseController(w)}))
 
 	// Idle watchdog for held writers. The timer only sets an atomic flag and
